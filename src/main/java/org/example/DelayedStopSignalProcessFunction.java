@@ -9,10 +9,14 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
 public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte, String, String> {
+    private static final Logger LOG = LoggerFactory.getLogger(DelayedStopSignalProcessFunction.class);
+
     private transient ValueState<Long> timerState;
     private transient ValueState<Boolean> stopSignalState;
     private final Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap;
@@ -58,6 +62,7 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
                 stopSignalState.update(true);
             }
         } else {
+            LOG.error(tableTagSchemaMap.keySet().toString());
             throw new RuntimeException("Unknown table in message: " + valueJSONObject.toJSONString());
         }
     }

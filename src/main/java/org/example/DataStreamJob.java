@@ -11,6 +11,9 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.DatumReader;
 import org.apache.avro.io.Decoder;
 import org.apache.avro.io.DecoderFactory;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.Options;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.RichMapFunction;
@@ -20,6 +23,7 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
 import org.apache.flink.connector.file.sink.FileSink;
+import org.apache.flink.core.fs.FSDataInputStream;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.formats.avro.typeutils.GenericRecordAvroTypeInfo;
@@ -34,11 +38,10 @@ import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.sql.*;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Properties;
+import java.util.*;
 
 public class DataStreamJob {
     private static final Logger LOG = LoggerFactory.getLogger(DataStreamJob.class);
@@ -52,24 +55,15 @@ public class DataStreamJob {
         // <<<
 
         // CLI OPTIONS >>>
+        LOG.info(">>> ARGS: {}", Arrays.toString(args));
+
         Options options = new Options();
         options.addOption("c", "config", true, "config json");
 
-        String configJsonStr = """
-            {
-                "sink.path": "s3://0000-flink-cdc/data/ods",
-                "source.id": "mysource",
-                "source.database.name": "test",
-                "binlog.offset": {
-                    "file": "mysql-bin.000003",
-                    "pos": 39570
-                },
-                "table.name.map": {
-                    "booka": "booka_v20240713"
-                }
-            }
-            """;
-        final String argConfig = options.getOption("c").getValue(configJsonStr);
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmd = parser.parse(options, args);
+
+        final String argConfig = cmd.getOptionValue("c");
 
         JSONObject tableNameMap = null;
         JSONObject binlogOffset = null;
@@ -78,19 +72,44 @@ public class DataStreamJob {
         String databaseName = "";
 
         if (argConfig != null) {
+            LOG.info(">>> LOADING CONFIG FROM {}", argConfig);
+
+            Path configPath = new Path(argConfig);
+            FileSystem configFS = configPath.getFileSystem();
+            String configJSONString = "";
+
+            try (FSDataInputStream configInputStream = configFS.open(configPath)) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(configInputStream));
+
+                StringBuilder content = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    content.append(line).append("\n");
+                }
+
+                configJSONString = content.toString();
+            }
+
             JSONObject config = null;
             try {
-                config = JSONObject.parseObject(argConfig);
+                config = JSONObject.parseObject(configJSONString);
             } catch (Exception e) {
                 System.err.println("[ERROR] Config JSON is not valid.");
                 System.exit(1);
             }
 
             tableNameMap = config.getJSONObject("table.name.map");
+
+            if (tableNameMap != null) {
+                LOG.info(">>> [CONFIG] LOADED TABLE NAME MAP: {}", tableNameMap);
+            }
+
             binlogOffset = config.getJSONObject("binlog.offset");
             sinkPath = config.getString("sink.path");
             sourceId = config.getString("source.id");
             databaseName = config.getString("source.database.name");
+        } else {
+            LOG.info(">>> NO CONFIG PROVIDED");
         }
 
         // <<<
@@ -186,7 +205,7 @@ public class DataStreamJob {
                 fieldAssembler = addFieldToSchema(fieldAssembler, "_ts", "BIGINT");
                 Schema avroSchema = fieldAssembler.endRecord();
 
-                final String outputTagID = String.format("%s/%s", databaseName, mappedTableName);
+                final String outputTagID = String.format("%s__%s", databaseName, mappedTableName);
                 final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
                 tableTagSchemaMap.put(tableName, Tuple2.of(outputTag, avroSchema));
 
@@ -208,7 +227,7 @@ public class DataStreamJob {
 
         // >>> CAPTURE DDL STATEMENTS TO SPECIAL DDL TABLE
 
-        final String tableName = String.format("%s_ddl", databaseName);
+        final String tableName = String.format("%s__%s_ddl", databaseName, databaseName);
         SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(tableName).fields();
 
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_db", "VARCHAR");
@@ -221,7 +240,7 @@ public class DataStreamJob {
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_binlog_pos_end", "BIGINT");
         Schema ddlAvroSchema = ddlFieldAssembler.endRecord();
 
-        final OutputTag<String> ddlOutputTag = new OutputTag<>(String.format("%s/%s", databaseName, tableName)) {};
+        final OutputTag<String> ddlOutputTag = new OutputTag<>(tableName) {};
         tableTagSchemaMap.put(tableName, Tuple2.of(ddlOutputTag, ddlAvroSchema));
 
         // CHECK FOR DDL STOP SIGNAL
@@ -257,7 +276,7 @@ public class DataStreamJob {
 
             Path outputPath = new Path(
                 sinkPath + "/" +
-                    (!sourceId.isBlank() ? String.format("%s/", sourceId) : "") +
+                    (!sourceId.isBlank() ? String.format("%s_", sourceId) : "") +
                     outputTag.getId());
             FileSink<GenericRecord> sink = FileSink
                 .forBulkFormat(outputPath, compressedParquetWriterFactory)
@@ -313,6 +332,8 @@ public class DataStreamJob {
             case "DOUBLE":
                 fieldAssembler = fieldAssembler.name(columnName).type().doubleType().noDefault();
                 break;
+            case "BIT":
+            case "BOOL":
             case "BOOLEAN":
                 fieldAssembler = fieldAssembler.name(columnName).type().booleanType().noDefault();
                 break;
@@ -356,6 +377,8 @@ public class DataStreamJob {
             case "TIMESTAMP":
                 fieldAssembler = fieldAssembler.name(columnName).type().unionOf().nullType().and().stringType().endUnion().nullDefault();
                 break;
+            case "BIT":
+            case "BOOL":
             case "BOOLEAN":
                 fieldAssembler = fieldAssembler.name(columnName).type().unionOf().nullType().and().booleanType().endUnion().nullDefault();
                 break;
