@@ -67,9 +67,15 @@ public class DataStreamJob {
 
         JSONObject tableNameMap = null;
         JSONObject binlogOffset = null;
+        String hostname = "localhost";
+        int port = 3306;
+        String username = "test";
+        String password = "";
         String sinkPath = "";
         String sourceId = "";
         String databaseName = "";
+        String timezone = "UTC";
+        int checkpointInterval = 30;
 
         if (argConfig != null) {
             LOG.info(">>> LOADING CONFIG FROM {}", argConfig);
@@ -107,7 +113,14 @@ public class DataStreamJob {
             binlogOffset = config.getJSONObject("binlog.offset");
             sinkPath = config.getString("sink.path");
             sourceId = config.getString("source.id");
+            hostname = Objects.requireNonNullElse(config.getString("source.hostname"), hostname);
+            port = config.getIntValue("source.port") > 0 ? config.getIntValue("source.port") : port;
+            LOG.info(">>> [CONFIG] LOADED SOURCE: {}:{}", hostname, port);
+            username = Objects.requireNonNullElse(config.getString("source.username"), username);
+            password = Objects.requireNonNullElse(config.getString("source.password"), password);
             databaseName = config.getString("source.database.name");
+            timezone = Objects.requireNonNullElse(config.getString("source.timezone"), timezone);
+            checkpointInterval = config.getIntValue("checkpoint.interval") > 0 ? config.getIntValue("checkpoint.interval") : checkpointInterval;
         } else {
             LOG.info(">>> NO CONFIG PROVIDED");
         }
@@ -142,13 +155,13 @@ public class DataStreamJob {
         // CREATE FLINK CDC SOURCE
 
         MySqlSource<String> mySqlSource = MySqlSource.<String>builder()
-            .hostname("localhost")
-            .port(63306)
+            .hostname(hostname)
+            .port(port)
             .databaseList(databaseName)
             .tableList(databaseName + ".*")
-            .username("root")
-            .password("testtest")
-            .serverTimeZone("UTC")
+            .username(username)
+            .password(password)
+            .serverTimeZone(timezone)
             .scanNewlyAddedTableEnabled(true)
             .startupOptions(startupOptions)
             .deserializer(new AvroDebeziumDeserializationSchema())
@@ -162,7 +175,7 @@ public class DataStreamJob {
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
-        env.enableCheckpointing(10000);
+        env.enableCheckpointing(checkpointInterval * 1000L);
 
         // <<<
 
@@ -175,7 +188,7 @@ public class DataStreamJob {
         // MAP TABLE NAME -> OUTPUT TAG FOR SIDE OUTPUT
 
         Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap = new HashMap<>();
-        try (Connection connection = DriverManager.getConnection("jdbc:mysql://localhost:63306", "root", "testtest")) {
+        try (Connection connection = DriverManager.getConnection(String.format("jdbc:mysql://%s:%d", hostname, port), username, password)) {
             DatabaseMetaData metaData = connection.getMetaData();
             ResultSet tables = metaData.getTables(databaseName, null, "%", new String[]{"TABLE"});
             while (tables.next()) {
