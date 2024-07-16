@@ -64,7 +64,7 @@ public class DataStreamJob {
         // <<<
 
         // CLI OPTIONS >>>
-        LOG.info(">>> [APP] ARGS: {}", Arrays.toString(args));
+        LOG.info(">>> [MAIN] ARGS: {}", Arrays.toString(args));
 
         Options options = new Options();
         options.addOption("c", "config", true, "config json");
@@ -93,7 +93,7 @@ public class DataStreamJob {
         // TODO: ADD STATS TABLE
 
         if (argConfig != null) {
-            LOG.info(">>> [CONFIG] LOADING CONFIG FROM {}", argConfig);
+            LOG.info(">>> [MAIN] LOADING CONFIG FROM {}", argConfig);
 
             Path configPath = new Path(argConfig);
             FileSystem configFS = configPath.getFileSystem();
@@ -116,14 +116,14 @@ public class DataStreamJob {
                 configJSON = JSONObject.parseObject(configJSONString);
             } catch (Exception e) {
                 // do not print json contents as it may contain credentials
-                LOG.error(">>> [CONFIG] CONFIG JSON IS NOT VALID");
+                LOG.error(">>> [MAIN] CONFIG JSON IS NOT VALID");
                 throw new RuntimeException();
             }
 
             tableNameMap = configJSON.getJSONObject("table.name.map");
 
             if (tableNameMap != null) {
-                LOG.info(">>> [CONFIG] LOADED TABLE NAME MAP: {}", tableNameMap);
+                LOG.info(">>> [MAIN] LOADED TABLE NAME MAP: {}", tableNameMap);
             }
 
             binlogOffset = configJSON.getJSONObject("binlog.offset");
@@ -140,12 +140,12 @@ public class DataStreamJob {
 
             if (checkpointStorage.equals("jobmanager") || checkpointStorage.equals("filesystem")) {
                 if (checkpointStorage.equals("filesystem")) {
-                    LOG.info(">>> [CONFIG] LOADED CHECKPOINT STORAGE: {}", checkpointStorage);
+                    LOG.info(">>> [MAIN] LOADED CHECKPOINT STORAGE: {}", checkpointStorage);
 
                     checkpointDirectory = configJSON.getString("checkpoint.directory");
 
                     if (checkpointDirectory == null) {
-                        LOG.error(">>> [CONFIG] CHECKPOINT DIRECTORY IS EMPTY FOR FILESYSTEM STORAGE");
+                        LOG.error(">>> [MAIN] CHECKPOINT DIRECTORY IS EMPTY FOR FILESYSTEM STORAGE");
                         throw new RuntimeException();
                     }
 
@@ -153,14 +153,14 @@ public class DataStreamJob {
                     checkpointConfig.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, checkpointDirectory);
                 }
             } else {
-                LOG.error(">>> [CONFIG] CHECKPOINT STORAGE NOT IN FORMAT: filesystem | jobmanager");
+                LOG.error(">>> [MAIN] CHECKPOINT STORAGE NOT IN FORMAT: filesystem | jobmanager");
                 throw new RuntimeException();
             }
 
-            LOG.info(">>> [CONFIG] LOADED SINK PATH: {}", sinkPath);
-            LOG.info(">>> [CONFIG] LOADED SOURCE: {}:{}", hostname, port);
+            LOG.info(">>> [MAIN] LOADED SINK PATH: {}", sinkPath);
+            LOG.info(">>> [MAIN] LOADED SOURCE: {}:{}", hostname, port);
         } else {
-            LOG.info(">>> NO CONFIG PROVIDED");
+            LOG.warn(">>> [MAIN] NO CONFIG PROVIDED");
         }
 
         env.configure(checkpointConfig);
@@ -176,13 +176,13 @@ public class DataStreamJob {
             if (binlogOffsetFile != null && binlogOffsetPos > 0) {
                 startupOptions = StartupOptions.specificOffset(binlogOffsetFile, binlogOffsetPos);
             } else {
-                LOG.error(">>> [CONFIG] BINLOG OFFSET NOT IN FORMAT: { \"file\": string, \"pos\": int }.");
+                LOG.error(">>> [MAIN] BINLOG OFFSET NOT IN FORMAT: { \"file\": string, \"pos\": int }.");
                 throw new RuntimeException();
             }
 
-            LOG.info(">>> [CONFIG] BINLOG OFFSET = {}, {}", binlogOffsetFile, binlogOffsetPos);
+            LOG.info(">>> [MAIN] BINLOG OFFSET = {}, {}", binlogOffsetFile, binlogOffsetPos);
         } else {
-            LOG.info(">>> [CONFIG] NO BINLOG OFFSET, SNAPSHOT + CDC");
+            LOG.info(">>> [MAIN] NO BINLOG OFFSET, SNAPSHOT + CDC");
         }
 
         // <<<
@@ -197,7 +197,7 @@ public class DataStreamJob {
 
         // CREATE FLINK CDC SOURCE
 
-        LOG.info(">>> [FLINK-CDC] CREATING FLINK-CDC SOURCE");
+        LOG.info(">>> [MAIN] CREATING FLINK-CDC SOURCE");
 
         MySqlSource<String> mySqlSource = MySqlSource.<String>builder()
             .hostname(hostname)
@@ -220,7 +220,7 @@ public class DataStreamJob {
 
         // CREATE FLINK SOURCE FROM FLINK CDC SOURCE
 
-        LOG.info(">>> [FLINK] CREATING STREAM FROM FLINK-CDC SOURCE");
+        LOG.info(">>> [MAIN] CREATING STREAM FROM FLINK-CDC SOURCE");
 
         DataStream<String> source = env
                 .fromSource(mySqlSource, WatermarkStrategy.noWatermarks(), "MySQL Source")
@@ -228,7 +228,7 @@ public class DataStreamJob {
 
         // MAP TABLE NAME -> OUTPUT TAG FOR SIDE OUTPUT
 
-        LOG.info(">>> [APP] CREATING TABLE MAPPING");
+        LOG.info(">>> [MAIN] CREATING TABLE MAPPING");
 
         Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap = new HashMap<>();
         try (Connection connection = DriverManager.getConnection(String.format("jdbc:mysql://%s:%d?tinyInt1isBit=false", hostname, port), username, password)) {
@@ -266,7 +266,7 @@ public class DataStreamJob {
                 tableTagSchemaMap.put(tableName, Tuple2.of(outputTag, avroSchema));
 
                 LOG.info(
-                    ">>> [APP] TABLE-TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", databaseName, tableName) ,
+                    ">>> [MAIN] TABLE-TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", databaseName, tableName) ,
                         (
                             tableName.equals(mappedTableName) ? ("(" + mappedTableName + ")") : ""
                         )
@@ -274,7 +274,7 @@ public class DataStreamJob {
                 LOG.info(String.valueOf(avroSchema));
             }
         } catch (SQLException e) {
-            LOG.error(">>> [APP] UNABLE TO CONNECT TO SOURCE, EXCEPTION:");
+            LOG.error(">>> [MAIN] UNABLE TO CONNECT TO SOURCE, EXCEPTION:");
             throw e;
         }
 
@@ -366,9 +366,23 @@ public class DataStreamJob {
         env.execute("Print MySQL Snapshot + Binlog");
     }
 
+    private static SchemaBuilder.FieldAssembler<Schema> addNullableFieldToSchema(
+        SchemaBuilder.FieldAssembler<Schema> fieldAssembler,
+        String columnName, String columnType
+    ) {
+        return addFieldToSchema(fieldAssembler, columnName, columnType, true);
+    }
+
     private static SchemaBuilder.FieldAssembler<Schema> addFieldToSchema(
         SchemaBuilder.FieldAssembler<Schema> fieldAssembler,
         String columnName, String columnType
+    ) {
+        return addFieldToSchema(fieldAssembler, columnName, columnType, false);
+    }
+
+    private static SchemaBuilder.FieldAssembler<Schema> addFieldToSchema(
+        SchemaBuilder.FieldAssembler<Schema> fieldAssembler,
+        String columnName, String columnType, boolean isNullable
     ) {
         switch (columnType.toUpperCase()) {
             case "INT":
@@ -376,21 +390,29 @@ public class DataStreamJob {
             case "SMALLINT":
             case "MEDIUMINT":
             case "DATE":
-                fieldAssembler = fieldAssembler.name(columnName).type().intType().noDefault();
+                fieldAssembler = isNullable
+                    ? fieldAssembler.name(columnName).type().unionOf().nullType().and().intType().endUnion().nullDefault()
+                    : fieldAssembler.name(columnName).type().intType().noDefault();
                 break;
             case "BIGINT":
             case "DATETIME":
             case "TIME":
-                fieldAssembler = fieldAssembler.name(columnName).type().longType().noDefault();
+                fieldAssembler = isNullable
+                    ? fieldAssembler.name(columnName).type().unionOf().nullType().and().longType().endUnion().nullDefault()
+                    : fieldAssembler.name(columnName).type().longType().noDefault();
                 break;
             case "FLOAT":
             case "DOUBLE":
-                fieldAssembler = fieldAssembler.name(columnName).type().doubleType().noDefault();
+                fieldAssembler = isNullable
+                    ? fieldAssembler.name(columnName).type().unionOf().nullType().and().doubleType().endUnion().nullDefault()
+                    : fieldAssembler.name(columnName).type().doubleType().noDefault();
                 break;
-            case "BIT": // TODO: MULTIPLE BITS TREATMENT
+            case "BIT":
             case "BOOL":
             case "BOOLEAN":
-                fieldAssembler = fieldAssembler.name(columnName).type().booleanType().noDefault();
+                fieldAssembler = isNullable
+                    ? fieldAssembler.name(columnName).type().unionOf().nullType().and().booleanType().endUnion().nullDefault()
+                    : fieldAssembler.name(columnName).type().booleanType().noDefault();
                 break;
             case "VARCHAR":
             case "CHAR":
@@ -398,50 +420,9 @@ public class DataStreamJob {
             case "DECIMAL":
             case "TIMESTAMP":
             default:
-                fieldAssembler = fieldAssembler.name(columnName).type().stringType().noDefault();
-                break;
-        }
-
-        return fieldAssembler;
-    }
-
-    // >>> CONVERT DATABASE COLUMN TYPE TO AVRO TYPE
-
-    private static SchemaBuilder.FieldAssembler<Schema> addNullableFieldToSchema(
-        SchemaBuilder.FieldAssembler<Schema> fieldAssembler,
-        String columnName, String columnType
-    ) {
-        switch (columnType.toUpperCase()) {
-            case "INT":
-            case "TINYINT":
-            case "SMALLINT":
-            case "MEDIUMINT":
-            case "DATE":
-                fieldAssembler = fieldAssembler.name(columnName).type().unionOf().nullType().and().intType().endUnion().nullDefault();
-                break;
-            case "BIGINT":
-            case "DATETIME":
-            case "TIME":
-                fieldAssembler = fieldAssembler.name(columnName).type().unionOf().nullType().and().longType().endUnion().nullDefault();
-                break;
-            case "FLOAT":
-            case "DOUBLE":
-                fieldAssembler = fieldAssembler.name(columnName).type().unionOf().nullType().and().doubleType().endUnion().nullDefault();
-                break;
-            case "DECIMAL": // Note: decimal.handling.mode = string
-            case "TIMESTAMP":
-                fieldAssembler = fieldAssembler.name(columnName).type().unionOf().nullType().and().stringType().endUnion().nullDefault();
-                break;
-            case "BIT":
-            case "BOOL":
-            case "BOOLEAN":
-                fieldAssembler = fieldAssembler.name(columnName).type().unionOf().nullType().and().booleanType().endUnion().nullDefault();
-                break;
-            case "VARCHAR":
-            case "CHAR":
-            case "TEXT":
-            default:
-                fieldAssembler = fieldAssembler.name(columnName).type().unionOf().nullType().and().stringType().endUnion().nullDefault();
+                fieldAssembler = isNullable
+                    ? fieldAssembler.name(columnName).type().unionOf().nullType().and().stringType().endUnion().nullDefault()
+                    : fieldAssembler.name(columnName).type().stringType().noDefault();
                 break;
         }
 
