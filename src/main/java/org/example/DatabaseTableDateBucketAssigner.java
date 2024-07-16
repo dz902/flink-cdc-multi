@@ -34,8 +34,6 @@ public class DatabaseTableDateBucketAssigner implements BucketAssigner<GenericRe
             dateFormatter = DateTimeFormatter.ofPattern(DATE_FORMAT).withZone(zoneId);
         }
 
-//        String db = record.get("_db").toString();
-//        String tbl = record.get("_tbl").toString();
         long ts = (long) record.get("_ts");
         String date = dateFormatter.format(Instant.ofEpochMilli(ts));
 

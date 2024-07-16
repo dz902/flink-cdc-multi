@@ -55,7 +55,7 @@ public class DataStreamJob {
         // <<<
 
         // CLI OPTIONS >>>
-        LOG.info(">>> ARGS: {}", Arrays.toString(args));
+        LOG.info(">>> [APP] ARGS: {}", Arrays.toString(args));
 
         Options options = new Options();
         options.addOption("c", "config", true, "config json");
@@ -81,11 +81,11 @@ public class DataStreamJob {
         // TODO: ADD STATS TABLE
 
         if (argConfig != null) {
-            LOG.info(">>> LOADING CONFIG FROM {}", argConfig);
+            LOG.info(">>> [CONFIG] LOADING CONFIG FROM {}", argConfig);
 
             Path configPath = new Path(argConfig);
             FileSystem configFS = configPath.getFileSystem();
-            String configJSONString = "";
+            String configJSONString;
 
             try (FSDataInputStream configInputStream = configFS.open(configPath)) {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(configInputStream));
@@ -99,12 +99,13 @@ public class DataStreamJob {
                 configJSONString = content.toString();
             }
 
-            JSONObject config = null;
+            JSONObject config;
             try {
                 config = JSONObject.parseObject(configJSONString);
             } catch (Exception e) {
-                System.err.println("[ERROR] Config JSON is not valid.");
-                System.exit(1);
+                // do not print json contents as it may contain credentials
+                LOG.error(">>> [CONFIG] CONFIG JSON IS NOT VALID");
+                throw new RuntimeException();
             }
 
             tableNameMap = config.getJSONObject("table.name.map");
@@ -140,9 +141,13 @@ public class DataStreamJob {
             if (binlogOffsetFile != null && binlogOffsetPos > 0) {
                 startupOptions = StartupOptions.specificOffset(binlogOffsetFile, binlogOffsetPos);
             } else {
-                System.err.println("[ERROR] Binlog offset format must be: { \"file\": string, \"pos\": int }.");
-                System.exit(1);
+                LOG.error(">>> [CONFIG] BINLOG OFFSET NOT IN FORMAT: { \"file\": string, \"pos\": int }.");
+                throw new RuntimeException();
             }
+
+            LOG.info(">>> [CONFIG] BINLOG OFFSET = {}, {}", binlogOffsetFile, binlogOffsetPos);
+        } else {
+            LOG.info(">>> [CONFIG] NO BINLOG OFFSET, SNAPSHOT + CDC");
         }
 
         // <<<
@@ -156,6 +161,8 @@ public class DataStreamJob {
         // <<<
 
         // CREATE FLINK CDC SOURCE
+
+        LOG.info(">>> [FLINK-CDC] CREATING FLINK-CDC SOURCE");
 
         MySqlSource<String> mySqlSource = MySqlSource.<String>builder()
             .hostname(hostname)
@@ -176,6 +183,8 @@ public class DataStreamJob {
 
         // FLINK ENV SETUP
 
+        LOG.info(">>> [FLINK] SETTING UP ENV");
+
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
         env.enableCheckpointing(checkpointInterval * 1000L);
@@ -184,11 +193,15 @@ public class DataStreamJob {
 
         // CREATE FLINK SOURCE FROM FLINK CDC SOURCE
 
+        LOG.info(">>> [FLINK] CREATING STREAM FROM FLINK-CDC SOURCE");
+
         DataStream<String> source = env
                 .fromSource(mySqlSource, WatermarkStrategy.noWatermarks(), "MySQL Source")
                 .setParallelism(1);
 
         // MAP TABLE NAME -> OUTPUT TAG FOR SIDE OUTPUT
+
+        LOG.info(">>> [APP] CREATING TABLE MAPPING");
 
         Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap = new HashMap<>();
         try (Connection connection = DriverManager.getConnection(String.format("jdbc:mysql://%s:%d?tinyInt1isBit=false", hostname, port), username, password)) {
@@ -225,18 +238,17 @@ public class DataStreamJob {
                 final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
                 tableTagSchemaMap.put(tableName, Tuple2.of(outputTag, avroSchema));
 
-                System.out.println(
-                    ">>>> TABLE-TAG-SCHEMA MAPPING FOR " + outputTagID +
+                LOG.info(
+                    ">>> [APP] TABLE-TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", databaseName, tableName) ,
                         (
                             tableName.equals(mappedTableName) ? ("(" + mappedTableName + ")") : ""
                         )
                 );
-                System.out.println(avroSchema);
+                LOG.info(String.valueOf(avroSchema));
             }
         } catch (SQLException e) {
-            System.out.println(e.getMessage());
-            System.exit(1);
-            //e.printStackTrace();
+            LOG.error(">>> [APP] UNABLE TO CONNECT TO SOURCE, EXCEPTION:");
+            throw e;
         }
 
         // <<<
@@ -264,7 +276,7 @@ public class DataStreamJob {
 
         SingleOutputStreamOperator<String> mainDataStream = source
             .keyBy(new NullByteKeySelector<>())
-            .process(new DelayedStopSignalProcessFunction(tableTagSchemaMap, ddlOutputTag))
+            .process(new DelayedStopSignalProcessFunction())
             .setParallelism(1)
             .keyBy(new NullByteKeySelector<>())
             .process(new StopSignalCheckerProcessFunction(tableTagSchemaMap))

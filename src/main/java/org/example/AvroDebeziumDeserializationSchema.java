@@ -11,15 +11,19 @@ import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Struct;
 import com.alibaba.fastjson.JSONObject;
 import io.debezium.data.Envelope;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 public class AvroDebeziumDeserializationSchema implements DebeziumDeserializationSchema<String> {
+    private static final Logger LOG = LoggerFactory.getLogger(DelayedStopSignalProcessFunction.class);
+
     @Override
     public void deserialize(SourceRecord sourceRecord, Collector<String> collector) throws Exception {
-        System.out.println(">>> DESERIALIZE RECORD");
-        System.out.println(sourceRecord);
+        LOG.debug(">>> [APP/AVRO-DESERIALIZER] DESERIALIZING RECORD");
+        LOG.debug(String.valueOf(sourceRecord));
 
         Struct value = (Struct) sourceRecord.value();
 
@@ -27,7 +31,7 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
         boolean isDDL = sourceRecord.valueSchema().field("historyRecord") != null;
 
         if (isDDL) {
-            System.out.println(">>> DESERIALIZE DDL");
+            LOG.debug(">>> [APP/AVRO-DESERIALIZER] DESERIALIZING DDL");
 
             String historyRecordString = (String) value.get("historyRecord");
             JSONObject historyRecord = JSONObject.parseObject(historyRecordString);
@@ -53,11 +57,10 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
 
             collector.collect(JSON.toJSONString(ddlObject, SerializerFeature.WriteMapNullValue));
 
-            System.out.println("<<< DESERIALIZE DDL");
             return;
         }
 
-        System.out.println(">>> DESERIALIZE RECORD");
+        LOG.debug(">>> [APP/AVRO-DESERIALIZER] DESERIALIZING ROW");
 
         String topic = sourceRecord.topic();
         String[] topicSplits = topic.split("\\.");
@@ -113,7 +116,6 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
         recordObject.put("_ts", valueSource.getInt64("ts_ms"));
 
         collector.collect(JSON.toJSONString(recordObject, SerializerFeature.WriteMapNullValue));
-        System.out.println("<<< DESERIALIZE RECORD");
     }
 
     @Override

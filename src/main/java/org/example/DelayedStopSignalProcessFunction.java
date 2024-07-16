@@ -1,31 +1,19 @@
 package org.example;
 
 import com.alibaba.fastjson.JSONObject;
-import org.apache.avro.Schema;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
-import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
-import org.apache.flink.util.OutputTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Map;
 
 public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte, String, String> {
     private static final Logger LOG = LoggerFactory.getLogger(DelayedStopSignalProcessFunction.class);
 
     private transient ValueState<Long> timerState;
     private transient ValueState<Boolean> stopSignalState;
-    private final Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap;
-    private final OutputTag<String> ddlOutputTag;
-
-    public DelayedStopSignalProcessFunction(Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap, OutputTag<String> ddlOutputTag) {
-        this.tableTagSchemaMap = tableTagSchemaMap;
-        this.ddlOutputTag = ddlOutputTag;
-    }
 
     @Override
     public void open(Configuration parameters) throws Exception {
@@ -46,31 +34,25 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
         out.collect(value);
 
         JSONObject valueJSONObject = JSONObject.parseObject(value);
-        String tableName = valueJSONObject.getString("_tbl");
+        String ddlStatement = valueJSONObject.getString("_ddl");
 
-        Tuple2<OutputTag<String>, Schema> tagSchemaTuple = tableTagSchemaMap.get(tableName);
-        if (tagSchemaTuple != null) {
-            if (tagSchemaTuple.f0 == ddlOutputTag) {
-                System.out.println(">>> DDL FOUND");
-                System.out.println(value);
+        if (ddlStatement != null) {
+            LOG.info(">>> [APP/STOP-SIGNAL-SENDER] DDL FOUND, SENDING STOP SIGNAL");
+            LOG.info(value);
 
-                // Register a timer to trigger after 10 seconds
-                long currentTime = ctx.timerService().currentProcessingTime();
-                long timerTime = currentTime + 10000; // 10 seconds delay
-                ctx.timerService().registerProcessingTimeTimer(timerTime);
-                timerState.update(timerTime);
-                stopSignalState.update(true);
-            }
-        } else {
-            LOG.error(tableTagSchemaMap.keySet().toString());
-            throw new RuntimeException("Unknown table in message: " + valueJSONObject.toJSONString());
+            // Register a timer to trigger after 10 seconds
+            long currentTime = ctx.timerService().currentProcessingTime();
+            long timerTime = currentTime + 10000; // 10 seconds delay
+            ctx.timerService().registerProcessingTimeTimer(timerTime);
+            timerState.update(timerTime);
+            stopSignalState.update(true);
         }
     }
 
     @Override
     public void onTimer(long timestamp, OnTimerContext ctx, Collector<String> out) throws Exception {
         if (Boolean.TRUE.equals(stopSignalState.value())) {
-            System.out.println(">>> SENDING STOP SIGNAL");
+            LOG.info(">>> [APP/STOP-SIGNAL-SENDER] SENDING STOP SIGNAL");
             // Send stop signal after 10 seconds
             out.collect("SIGNAL-STOP");
             stopSignalState.clear();
