@@ -72,14 +72,28 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
 
             JSONObject valueObject = null;
             if (o != null) {
-                String type = switch (o.getClass().getSimpleName()) {
-                    case "Integer", "Short" -> "int";
-                    case "Long" -> "long";
-                    case "Float" -> "float";
-                    case "Double" -> "double";
-                    case "Boolean" -> "boolean";
-                    default -> "string";
-                };
+                String type;
+                switch (o.getClass().getSimpleName()) {
+                    case "Integer":
+                    case "Short":
+                        type = "int";
+                        break;
+                    case "Long":
+                        type = "long";
+                        break;
+                    case "Float":
+                        type = "float";
+                        break;
+                    case "Double":
+                        type = "double";
+                        break;
+                    case "Boolean":
+                        type = "boolean";
+                        break;
+                    default:
+                        type = "string";
+                        break;
+                }
 
                 valueObject = new JSONObject();
                 valueObject.put(type, o);

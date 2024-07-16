@@ -77,6 +77,9 @@ public class DataStreamJob {
         String timezone = "UTC";
         int checkpointInterval = 30;
 
+        // TODO: WRITE CONFIGURATION BACK
+        // TODO: ADD STATS TABLE
+
         if (argConfig != null) {
             LOG.info(">>> LOADING CONFIG FROM {}", argConfig);
 
@@ -188,7 +191,7 @@ public class DataStreamJob {
         // MAP TABLE NAME -> OUTPUT TAG FOR SIDE OUTPUT
 
         Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap = new HashMap<>();
-        try (Connection connection = DriverManager.getConnection(String.format("jdbc:mysql://%s:%d", hostname, port), username, password)) {
+        try (Connection connection = DriverManager.getConnection(String.format("jdbc:mysql://%s:%d?tinyInt1isBit=false", hostname, port), username, password)) {
             DatabaseMetaData metaData = connection.getMetaData();
             ResultSet tables = metaData.getTables(databaseName, null, "%", new String[]{"TABLE"});
             while (tables.next()) {
@@ -345,7 +348,7 @@ public class DataStreamJob {
             case "DOUBLE":
                 fieldAssembler = fieldAssembler.name(columnName).type().doubleType().noDefault();
                 break;
-            case "BIT":
+            case "BIT": // TODO: MULTIPLE BITS TREATMENT
             case "BOOL":
             case "BOOLEAN":
                 fieldAssembler = fieldAssembler.name(columnName).type().booleanType().noDefault();
