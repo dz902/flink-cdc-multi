@@ -47,7 +47,7 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
                 .withZone(ZoneId.systemDefault());
 
             ddlObject.put("_db", database);
-            ddlObject.put("_tbl", database + "_ddl");
+            ddlObject.put("_tbl", String.format("_%s_ddl", database));
             ddlObject.put("_ddl", historyRecord.getString("ddl"));
             ddlObject.put("_ddl_db", valueSource.getString("db"));
             ddlObject.put("_ddl_tbl", valueSource.getString("table"));

@@ -119,12 +119,14 @@ public class DataStreamJob {
             sourceId = config.getString("source.id");
             hostname = Objects.requireNonNullElse(config.getString("source.hostname"), hostname);
             port = config.getIntValue("source.port") > 0 ? config.getIntValue("source.port") : port;
-            LOG.info(">>> [CONFIG] LOADED SOURCE: {}:{}", hostname, port);
             username = Objects.requireNonNullElse(config.getString("source.username"), username);
             password = Objects.requireNonNullElse(config.getString("source.password"), password);
             databaseName = config.getString("source.database.name");
             timezone = Objects.requireNonNullElse(config.getString("source.timezone"), timezone);
             checkpointInterval = config.getIntValue("checkpoint.interval") > 0 ? config.getIntValue("checkpoint.interval") : checkpointInterval;
+
+            LOG.info(">>> [CONFIG] LOADED SINK PATH: {}", sinkPath);
+            LOG.info(">>> [CONFIG] LOADED SOURCE: {}:{}", hostname, port);
         } else {
             LOG.info(">>> NO CONFIG PROVIDED");
         }
@@ -255,7 +257,7 @@ public class DataStreamJob {
 
         // >>> CAPTURE DDL STATEMENTS TO SPECIAL DDL TABLE
 
-        final String tableName = String.format("%s__%s_ddl", databaseName, databaseName);
+        final String tableName = String.format("_%s_ddl", databaseName);
         SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(tableName).fields();
 
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_db", "VARCHAR");

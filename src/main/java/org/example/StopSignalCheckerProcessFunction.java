@@ -24,7 +24,7 @@ public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte,
         LOG.debug(">>> [APP/STOP-SIGNAL-CHECKER] CHECKING STOP SIGNAL");
 
         if (value.equals("SIGNAL-STOP")) {
-            LOG.error(">>> [APP/STOP-SIGNAL-CHECKER] STOP SIGNAL RECEIVED, DDL FOUND, MANUAL INTERVENTION IS NEEDED");
+            LOG.error(">>> [STOP-SIGNAL-CHECKER] STOP SIGNAL RECEIVED, DDL FOUND, MANUAL INTERVENTION IS NEEDED");
             throw new RuntimeException();
         }
 
@@ -35,9 +35,12 @@ public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte,
 
         Tuple2<OutputTag<String>, Schema> tagSchemaTuple = tableTagSchemaMap.get(tableName);
         if (tagSchemaTuple != null) {
-            LOG.debug(">>> [APP/STOP-SIGNAL-CHECKER] SIDE OUTPUT TO: {}", tagSchemaTuple.f0);
+            LOG.debug(">>> [STOP-SIGNAL-CHECKER] SIDE OUTPUT TO: {}", tagSchemaTuple.f0);
             LOG.trace(value);
             ctx.output(tagSchemaTuple.f0, value);
+        } else {
+            LOG.error(">>> [STOP-SIGNAL-CHECKER] UNKNOWN TABLE: {}", tableName);
+            throw new RuntimeException();
         }
     }
 }
