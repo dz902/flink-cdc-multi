@@ -270,7 +270,8 @@ public class DataStreamJob {
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_binlog_pos_end", "BIGINT");
         Schema ddlAvroSchema = ddlFieldAssembler.endRecord();
 
-        final OutputTag<String> ddlOutputTag = new OutputTag<>(tableName) {};
+        final String outputTagID = String.format("%s__%s", databaseName, tableName);
+        final OutputTag<String> ddlOutputTag = new OutputTag<>(outputTagID) {};
         tableTagSchemaMap.put(tableName, Tuple2.of(ddlOutputTag, ddlAvroSchema));
 
         // CHECK FOR DDL STOP SIGNAL
