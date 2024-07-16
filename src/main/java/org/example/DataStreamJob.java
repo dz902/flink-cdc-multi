@@ -20,6 +20,7 @@ import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.java.functions.NullByteKeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
 import org.apache.flink.connector.file.sink.FileSink;
@@ -47,10 +48,18 @@ public class DataStreamJob {
     private static final Logger LOG = LoggerFactory.getLogger(DataStreamJob.class);
 
     public static void main(String[] args) throws Exception {
+        // FLINK ENV SETUP
+
+        LOG.info(">>> [MAIN] SETTING UP FLINK ENV");
+
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
+
+        Configuration flinkConfig = GlobalConfiguration.loadConfiguration();
+
         // YOU MUST MANUALLY LOAD CONFIG FOR S3 REGION TO TAKE EFFECT
 
-        Configuration configuration = GlobalConfiguration.loadConfiguration();
-        FileSystem.initialize(configuration, null);
+        FileSystem.initialize(flinkConfig, null);
 
         // <<<
 
@@ -75,7 +84,10 @@ public class DataStreamJob {
         String sourceId = "";
         String databaseName = "";
         String timezone = "UTC";
+        String checkpointStorage;
+        String checkpointDirectory;
         int checkpointInterval = 30;
+        Configuration checkpointConfig = new Configuration();
 
         // TODO: WRITE CONFIGURATION BACK
         // TODO: ADD STATS TABLE
@@ -99,31 +111,51 @@ public class DataStreamJob {
                 configJSONString = content.toString();
             }
 
-            JSONObject config;
+            JSONObject configJSON;
             try {
-                config = JSONObject.parseObject(configJSONString);
+                configJSON = JSONObject.parseObject(configJSONString);
             } catch (Exception e) {
                 // do not print json contents as it may contain credentials
                 LOG.error(">>> [CONFIG] CONFIG JSON IS NOT VALID");
                 throw new RuntimeException();
             }
 
-            tableNameMap = config.getJSONObject("table.name.map");
+            tableNameMap = configJSON.getJSONObject("table.name.map");
 
             if (tableNameMap != null) {
                 LOG.info(">>> [CONFIG] LOADED TABLE NAME MAP: {}", tableNameMap);
             }
 
-            binlogOffset = config.getJSONObject("binlog.offset");
-            sinkPath = config.getString("sink.path");
-            sourceId = config.getString("source.id");
-            hostname = Objects.requireNonNullElse(config.getString("source.hostname"), hostname);
-            port = config.getIntValue("source.port") > 0 ? config.getIntValue("source.port") : port;
-            username = Objects.requireNonNullElse(config.getString("source.username"), username);
-            password = Objects.requireNonNullElse(config.getString("source.password"), password);
-            databaseName = config.getString("source.database.name");
-            timezone = Objects.requireNonNullElse(config.getString("source.timezone"), timezone);
-            checkpointInterval = config.getIntValue("checkpoint.interval") > 0 ? config.getIntValue("checkpoint.interval") : checkpointInterval;
+            binlogOffset = configJSON.getJSONObject("binlog.offset");
+            sinkPath = configJSON.getString("sink.path");
+            sourceId = configJSON.getString("source.id");
+            hostname = Objects.requireNonNullElse(configJSON.getString("source.hostname"), hostname);
+            port = configJSON.getIntValue("source.port") > 0 ? configJSON.getIntValue("source.port") : port;
+            username = Objects.requireNonNullElse(configJSON.getString("source.username"), username);
+            password = Objects.requireNonNullElse(configJSON.getString("source.password"), password);
+            databaseName = configJSON.getString("source.database.name");
+            timezone = Objects.requireNonNullElse(configJSON.getString("source.timezone"), timezone);
+            checkpointInterval = configJSON.getIntValue("checkpoint.interval") > 0 ? configJSON.getIntValue("checkpoint.interval") : checkpointInterval;
+            checkpointStorage = Objects.requireNonNullElse(configJSON.getString("checkpoint.storage"), "jobmanager");
+
+            if (checkpointStorage.equals("jobmanager") || checkpointStorage.equals("filesystem")) {
+                if (checkpointStorage.equals("filesystem")) {
+                    LOG.info(">>> [CONFIG] LOADED CHECKPOINT STORAGE: {}", checkpointStorage);
+
+                    checkpointDirectory = configJSON.getString("checkpoint.directory");
+
+                    if (checkpointDirectory == null) {
+                        LOG.error(">>> [CONFIG] CHECKPOINT DIRECTORY IS EMPTY FOR FILESYSTEM STORAGE");
+                        throw new RuntimeException();
+                    }
+
+                    checkpointConfig.set(CheckpointingOptions.CHECKPOINT_STORAGE, checkpointStorage);
+                    checkpointConfig.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, checkpointDirectory);
+                }
+            } else {
+                LOG.error(">>> [CONFIG] CHECKPOINT STORAGE NOT IN FORMAT: filesystem | jobmanager");
+                throw new RuntimeException();
+            }
 
             LOG.info(">>> [CONFIG] LOADED SINK PATH: {}", sinkPath);
             LOG.info(">>> [CONFIG] LOADED SOURCE: {}:{}", hostname, port);
@@ -131,7 +163,8 @@ public class DataStreamJob {
             LOG.info(">>> NO CONFIG PROVIDED");
         }
 
-        // <<<
+        env.configure(checkpointConfig);
+        env.enableCheckpointing(checkpointInterval * 1000L);
 
         // BINLOG OFFSET
 
@@ -182,14 +215,6 @@ public class DataStreamJob {
             .build();
 
         // <<<
-
-        // FLINK ENV SETUP
-
-        LOG.info(">>> [FLINK] SETTING UP ENV");
-
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-        env.enableCheckpointing(checkpointInterval * 1000L);
 
         // <<<
 
@@ -324,7 +349,6 @@ public class DataStreamJob {
         // <<<
 
         // PRINT FROM MAIN STREAMS
-        // TODO: MAKE THIS OPTIONAL, NOT NEEDED IN PRODUCTION, HUGE LOGS
         // TODO: DRYRUN MODE
 
         mainDataStream
