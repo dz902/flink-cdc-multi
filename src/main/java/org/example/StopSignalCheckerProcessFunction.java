@@ -6,13 +6,13 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.Map;
 
 public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte, String, String> {
-    private static final Logger LOG = LoggerFactory.getLogger("flink-cdc-multi");
+    private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap;
 
     public StopSignalCheckerProcessFunction(Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap) {

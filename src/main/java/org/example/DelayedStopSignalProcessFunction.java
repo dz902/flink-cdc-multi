@@ -6,11 +6,11 @@ import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte, String, String> {
-    private static final Logger LOG = LoggerFactory.getLogger("flink-cdc-multi");
+    private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
 
     private transient ValueState<Long> timerState;
     private transient ValueState<Boolean> stopSignalState;

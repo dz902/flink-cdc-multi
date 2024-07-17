@@ -277,6 +277,7 @@ public class DataStreamJob {
                     String columnType = columns.getString("TYPE_NAME");
 
                     // NOTE: NULL is always allowed
+                    LOG.debug(">>> [MAIN] CONVERTING COLUMN: {}.{}: {}", sanitizedTableName, sanitizedColumnName, columnType);
 
                     fieldAssembler = addNullableFieldToSchema(fieldAssembler, sanitizedColumnName, columnType);
                 }
@@ -417,6 +418,9 @@ public class DataStreamJob {
         SchemaBuilder.FieldAssembler<Schema> fieldAssembler,
         String columnName, String columnType, boolean isNullable
     ) {
+        // REMOVE "UNSIGNED" OR OTHER NASTY THINGS
+        columnType = columnType.replaceFirst(" .*", "");
+
         switch (columnType.toUpperCase()) {
             case "INT":
             case "TINYINT":
@@ -478,6 +482,9 @@ public class DataStreamJob {
 
         @Override
         public GenericRecord map(String value) throws Exception {
+            LOG.debug(">>> [MAIN] CONVERT JSON STRING TO AVRO");
+            LOG.trace(value);
+            LOG.trace(avroSchema);
             DatumReader<GenericRecord> reader = new GenericDatumReader<>(avroSchema);
             Decoder decoder = DecoderFactory.get().jsonDecoder(avroSchema, value);
             return reader.read(null, decoder);
