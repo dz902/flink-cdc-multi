@@ -38,7 +38,7 @@ under the License.
 		<debezium.version>1.9.8.Final</debezium.version>
 		<flink.cdc.version>2.4.2</flink.cdc.version>
 		<flink.guava.version>30.1.1-jre-16.1</flink.guava.version>
-		<parquet.avro.version>1.14.1</parquet.avro.version>
+		<parquet.avro.version>1.13.1</parquet.avro.version>
 	</properties>
 
 	<repositories>
@@ -167,13 +167,13 @@ under the License.
 			<groupId>org.apache.logging.log4j</groupId>
 			<artifactId>log4j-api</artifactId>
 			<version>${log4j.version}</version>
-			<scope>runtime</scope>
+			<scope>provided</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.logging.log4j</groupId>
 			<artifactId>log4j-core</artifactId>
 			<version>${log4j.version}</version>
-			<scope>runtime</scope>
+			<scope>provided</scope>
 		</dependency>
 	</dependencies>
 

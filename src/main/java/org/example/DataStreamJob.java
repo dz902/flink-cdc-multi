@@ -34,10 +34,13 @@ import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.OnCheckpointRollingPolicy;
 import org.apache.flink.util.OutputTag;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -45,7 +48,7 @@ import java.sql.*;
 import java.util.*;
 
 public class DataStreamJob {
-    private static final Logger LOG = LoggerFactory.getLogger(DataStreamJob.class);
+    private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
 
     public static void main(String[] args) throws Exception {
         // FLINK ENV SETUP
@@ -68,9 +71,22 @@ public class DataStreamJob {
 
         Options options = new Options();
         options.addOption("c", "config", true, "config json");
+        options.addOption(null, "debug", false, "Enable debug logging.");
 
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd = parser.parse(options, args);
+
+        if (cmd.hasOption("debug")) {
+            LOG.info(">>> [MAIN] DEBUG MODE");
+
+            LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
+            org.apache.logging.log4j.core.config.Configuration config = ctx.getConfiguration();
+
+            LoggerConfig loggerConfig = new LoggerConfig("flink-cdc-multi", Level.TRACE, true);
+            config.addLogger("flink-cdc-multi", loggerConfig);
+
+            ctx.updateLoggers();
+        }
 
         final String argConfig = cmd.getOptionValue("c");
 
@@ -235,24 +251,34 @@ public class DataStreamJob {
             DatabaseMetaData metaData = connection.getMetaData();
             ResultSet tables = metaData.getTables(databaseName, null, "%", new String[]{"TABLE"});
             while (tables.next()) {
-                String tableName = tables.getString(3);
-                String mappedTableName = tableName;
+                String tableName = tables
+                    .getString(3);
+                String sanitizedTableName = tableName
+                    .replace('-', '_');
+
+                String mappedTableName = null;
+                String sanitizedMappedTableName = sanitizedTableName;
                 if (tableNameMap != null) {
-                    mappedTableName = Objects.requireNonNullElse(tableNameMap.getString(tableName), tableName);
-                    //tableNameMap.getString(tableName) != null ? tableNameMap.getString(tableName) : tableName;
+                    mappedTableName = tableNameMap.getString(tableName);
+                    if (mappedTableName != null) {
+                        sanitizedMappedTableName = mappedTableName.replace('-', '_');
+                    }
                 }
+
+                // TODO: MULTIPLE DB?
 
                 ResultSet columns = metaData.getColumns(databaseName, null, tableName, "%");
 
-                SchemaBuilder.FieldAssembler<Schema> fieldAssembler = SchemaBuilder.record(tableName).fields();
+                SchemaBuilder.FieldAssembler<Schema> fieldAssembler = SchemaBuilder.record(sanitizedTableName).fields();
                 while (columns.next()) {
-                    String columnName = columns.getString("COLUMN_NAME");
+                    String sanitizedColumnName = columns
+                        .getString("COLUMN_NAME")
+                        .replace('-', '_');
                     String columnType = columns.getString("TYPE_NAME");
-                    //boolean isNullable = columns.getInt("NULLABLE") == 1;
 
                     // NOTE: NULL is always allowed
 
-                    fieldAssembler = addNullableFieldToSchema(fieldAssembler, columnName, columnType);
+                    fieldAssembler = addNullableFieldToSchema(fieldAssembler, sanitizedColumnName, columnType);
                 }
 
                 fieldAssembler = addFieldToSchema(fieldAssembler, "_db", "VARCHAR");
@@ -261,14 +287,15 @@ public class DataStreamJob {
                 fieldAssembler = addFieldToSchema(fieldAssembler, "_ts", "BIGINT");
                 Schema avroSchema = fieldAssembler.endRecord();
 
-                final String outputTagID = String.format("%s__%s", databaseName, mappedTableName);
+                String sanitizedDatabaseName = databaseName.replace('-', '_');
+                final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedMappedTableName);
                 final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
-                tableTagSchemaMap.put(tableName, Tuple2.of(outputTag, avroSchema));
+                tableTagSchemaMap.put(sanitizedTableName, Tuple2.of(outputTag, avroSchema));
 
                 LOG.info(
-                    ">>> [MAIN] TABLE-TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", databaseName, tableName) ,
+                    ">>> [MAIN] TABLE-TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", sanitizedDatabaseName, sanitizedTableName) ,
                         (
-                            tableName.equals(mappedTableName) ? ("(" + mappedTableName + ")") : ""
+                            !sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : ""
                         )
                 );
                 LOG.info(String.valueOf(avroSchema));
@@ -282,8 +309,9 @@ public class DataStreamJob {
 
         // >>> CAPTURE DDL STATEMENTS TO SPECIAL DDL TABLE
 
-        final String tableName = String.format("_%s_ddl", databaseName);
-        SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(tableName).fields();
+        String sanitizedDatabaseName = databaseName.replace('-', '_');
+        final String sanitizedDDLTableName = String.format("_%s_ddl", sanitizedDatabaseName);
+        SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(sanitizedDDLTableName).fields();
 
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_db", "VARCHAR");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_tbl", "VARCHAR");
@@ -295,9 +323,14 @@ public class DataStreamJob {
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_binlog_pos_end", "BIGINT");
         Schema ddlAvroSchema = ddlFieldAssembler.endRecord();
 
-        final String outputTagID = String.format("%s__%s", databaseName, tableName);
+        final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedDDLTableName);
         final OutputTag<String> ddlOutputTag = new OutputTag<>(outputTagID) {};
-        tableTagSchemaMap.put(tableName, Tuple2.of(ddlOutputTag, ddlAvroSchema));
+        tableTagSchemaMap.put(sanitizedDDLTableName, Tuple2.of(ddlOutputTag, ddlAvroSchema));
+
+        LOG.info(
+            ">>> [MAIN] TABLE-TAG-SCHEMA MAP FOR: {}", String.format("%s.%s", sanitizedDatabaseName, sanitizedDDLTableName)
+        );
+        LOG.info(String.valueOf(ddlAvroSchema));
 
         // CHECK FOR DDL STOP SIGNAL
         // NOTE: MUST BE KEYED STREAM TO USE TIMER

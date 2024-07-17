@@ -10,7 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte, String, String> {
-    private static final Logger LOG = LoggerFactory.getLogger(DelayedStopSignalProcessFunction.class);
+    private static final Logger LOG = LoggerFactory.getLogger("flink-cdc-multi");
 
     private transient ValueState<Long> timerState;
     private transient ValueState<Boolean> stopSignalState;

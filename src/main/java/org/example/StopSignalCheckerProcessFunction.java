@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 
 public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte, String, String> {
-    private static final Logger LOG = LoggerFactory.getLogger(DelayedStopSignalProcessFunction.class);
+    private static final Logger LOG = LoggerFactory.getLogger("flink-cdc-multi");
     private final Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap;
 
     public StopSignalCheckerProcessFunction(Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap) {
@@ -21,7 +21,7 @@ public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte,
 
     @Override
     public void processElement(String value, Context ctx, Collector<String> out) throws Exception {
-        LOG.debug(">>> [APP/STOP-SIGNAL-CHECKER] CHECKING STOP SIGNAL");
+        LOG.debug(">>> [STOP-SIGNAL-CHECKER] CHECKING STOP SIGNAL");
 
         if (value.equals("SIGNAL-STOP")) {
             LOG.error(">>> [STOP-SIGNAL-CHECKER] STOP SIGNAL RECEIVED, DDL FOUND, MANUAL INTERVENTION IS NEEDED");
@@ -31,15 +31,18 @@ public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte,
         out.collect(value);
 
         JSONObject valueJSONObject = JSONObject.parseObject(value);
-        String tableName = valueJSONObject.getString("_tbl");
+        String sanitizedTableName = valueJSONObject
+            .getString("_tbl")
+            .replace('-', '_');
 
-        Tuple2<OutputTag<String>, Schema> tagSchemaTuple = tableTagSchemaMap.get(tableName);
+        Tuple2<OutputTag<String>, Schema> tagSchemaTuple = tableTagSchemaMap.get(sanitizedTableName);
         if (tagSchemaTuple != null) {
             LOG.debug(">>> [STOP-SIGNAL-CHECKER] SIDE OUTPUT TO: {}", tagSchemaTuple.f0);
             LOG.trace(value);
             ctx.output(tagSchemaTuple.f0, value);
         } else {
-            LOG.error(">>> [STOP-SIGNAL-CHECKER] UNKNOWN TABLE: {}", tableName);
+            LOG.error(">>> [STOP-SIGNAL-CHECKER] UNKNOWN TABLE: {}", sanitizedTableName);
+            LOG.error(tableTagSchemaMap.toString());
             throw new RuntimeException();
         }
     }

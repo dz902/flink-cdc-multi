@@ -102,7 +102,7 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
                 valueObject.put(type, o);
             }
 
-            recordObject.put(field.name(), valueObject);
+            recordObject.put(field.name().replace('-', '_'), valueObject);
         }
 
         Struct valueSource = value.getStruct("source");

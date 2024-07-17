@@ -1,1 +1,2 @@
+classloader.resolve-order: parent-first
 s3.endpoint.region: cn-northwest-1
