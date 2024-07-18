@@ -179,6 +179,11 @@ public class DataStreamJob {
             LOG.warn(">>> [MAIN] NO CONFIG PROVIDED");
         }
 
+        String sanitizedDatabaseName = databaseName.replace('-', '_');
+        if (!databaseName.equals(sanitizedDatabaseName)) {
+            LOG.warn(">>> [MAIN] DATABASE NAME IS SANITIZED: {} -> {}", databaseName, sanitizedDatabaseName);
+        }
+
         env.configure(checkpointConfig);
         env.enableCheckpointing(checkpointInterval * 1000L);
 
@@ -208,6 +213,7 @@ public class DataStreamJob {
         Properties debeziumProperties = new Properties();
         debeziumProperties.setProperty("bigint.unsigned.handling.mode","long");
         debeziumProperties.setProperty("decimal.handling.mode","string");
+        debeziumProperties.setProperty("database.history.skip.unparseable.ddl", "false");
 
         // <<<
 
@@ -255,8 +261,11 @@ public class DataStreamJob {
                     .getString(3);
                 String sanitizedTableName = tableName
                     .replace('-', '_');
+                if (!tableName.equals(sanitizedTableName)) {
+                    LOG.warn(">>> [MAIN] TABLE NAME IS SANITIZED: {} -> {}", tableName, sanitizedTableName);
+                }
 
-                String mappedTableName = null;
+                String mappedTableName;
                 String sanitizedMappedTableName = sanitizedTableName;
                 if (tableNameMap != null) {
                     mappedTableName = tableNameMap.getString(tableName);
@@ -271,9 +280,20 @@ public class DataStreamJob {
 
                 SchemaBuilder.FieldAssembler<Schema> fieldAssembler = SchemaBuilder.record(sanitizedTableName).fields();
                 while (columns.next()) {
-                    String sanitizedColumnName = columns
-                        .getString("COLUMN_NAME")
+                    String columnName = columns
+                        .getString("COLUMN_NAME");
+                    String sanitizedColumnName = columnName
                         .replace('-', '_');
+                    if (!columnName.equals(sanitizedColumnName)) {
+                        LOG.warn(
+                            ">>> [MAIN] COLUMN NAME SANITIZED: ({}) {} -> {}",
+                            sanitizedTableName,
+                            columnName,
+                            sanitizedColumnName
+                        );
+                    }
+
+
                     String columnType = columns.getString("TYPE_NAME");
 
                     // NOTE: NULL is always allowed
@@ -288,7 +308,6 @@ public class DataStreamJob {
                 fieldAssembler = addFieldToSchema(fieldAssembler, "_ts", "BIGINT");
                 Schema avroSchema = fieldAssembler.endRecord();
 
-                String sanitizedDatabaseName = databaseName.replace('-', '_');
                 final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedMappedTableName);
                 final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
                 tableTagSchemaMap.put(sanitizedTableName, Tuple2.of(outputTag, avroSchema));
@@ -310,7 +329,6 @@ public class DataStreamJob {
 
         // >>> CAPTURE DDL STATEMENTS TO SPECIAL DDL TABLE
 
-        String sanitizedDatabaseName = databaseName.replace('-', '_');
         final String sanitizedDDLTableName = String.format("_%s_ddl", sanitizedDatabaseName);
         SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(sanitizedDDLTableName).fields();
 

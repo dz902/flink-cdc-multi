@@ -24,8 +24,9 @@ public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte,
         LOG.debug(">>> [STOP-SIGNAL-CHECKER] CHECKING STOP SIGNAL");
 
         if (value.equals("SIGNAL-STOP")) {
-            LOG.error(">>> [STOP-SIGNAL-CHECKER] STOP SIGNAL RECEIVED, DDL FOUND, MANUAL INTERVENTION IS NEEDED");
-            throw new RuntimeException();
+            String msg = "STOP SIGNAL RECEIVED, DDL FOUND, MANUAL INTERVENTION IS NEEDED";
+            LOG.error(">>> [STOP-SIGNAL-CHECKER] {}", msg);
+            throw new RuntimeException(msg);
         }
 
         out.collect(value);

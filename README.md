@@ -1,6 +1,6 @@
 # FLINK-CDC-MULTI
 
-# Quick Start
+## Quick Start
 
 - Start Amazon EMR cluster (`emr-6.15.0` and `flink 1.17.1`)
 - Edit configuration
