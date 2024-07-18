@@ -38,7 +38,8 @@ under the License.
 		<debezium.version>1.9.8.Final</debezium.version>
 		<flink.cdc.version>2.4.2</flink.cdc.version>
 		<flink.guava.version>30.1.1-jre-16.1</flink.guava.version>
-		<parquet.avro.version>1.13.1</parquet.avro.version>
+		<parquet.avro.version>1.12.3</parquet.avro.version>
+		<avro.version>1.7.7</avro.version>
 	</properties>
 
 	<repositories>
@@ -133,18 +134,8 @@ under the License.
 			<groupId>org.apache.parquet</groupId>
 			<artifactId>parquet-avro</artifactId>
 			<version>${parquet.avro.version}</version>
+			<scope>provided</scope>
 		</dependency>
-		<dependency>
-			<groupId>org.apache.parquet</groupId>
-			<artifactId>parquet-hadoop</artifactId>
-			<version>${parquet.avro.version}</version>
-		</dependency>
-
-		<!--		<dependency>-->
-<!--			<groupId>org.apache.avro</groupId>-->
-<!--			<artifactId>avro</artifactId>-->
-<!--			<version>1.11.0</version>-->
-<!--		</dependency>-->
 
 		<!-- Example:
 

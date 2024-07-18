@@ -31,11 +31,14 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
             return;
         }
 
+        JSONObject valueJSONObject = JSONObject.parseObject(value);
+        valueJSONObject.remove("_tbl");
+        valueJSONObject.remove("_db");
+
+        value = valueJSONObject.toJSONString();
         out.collect(value);
 
-        JSONObject valueJSONObject = JSONObject.parseObject(value);
         String ddlStatement = valueJSONObject.getString("_ddl");
-
         if (ddlStatement != null) {
             LOG.info(">>> [APP/STOP-SIGNAL-SENDER] DDL FOUND, SENDING STOP SIGNAL");
             LOG.info(value);

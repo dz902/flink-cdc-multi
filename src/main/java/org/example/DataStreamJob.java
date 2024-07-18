@@ -59,10 +59,11 @@ public class DataStreamJob {
         env.setParallelism(1);
 
         Configuration flinkConfig = GlobalConfiguration.loadConfiguration();
+        env.configure(flinkConfig);
 
         // YOU MUST MANUALLY LOAD CONFIG FOR S3 REGION TO TAKE EFFECT
 
-        FileSystem.initialize(flinkConfig, null);
+        // FileSystem.initialize(flinkConfig, null);
 
         // <<<
 
