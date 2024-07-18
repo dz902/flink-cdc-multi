@@ -27,6 +27,8 @@ import org.apache.flink.connector.file.sink.FileSink;
 import org.apache.flink.core.fs.FSDataInputStream;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.core.plugin.PluginManager;
+import org.apache.flink.core.plugin.PluginUtils;
 import org.apache.flink.formats.avro.typeutils.GenericRecordAvroTypeInfo;
 import org.apache.flink.formats.parquet.ParquetWriterFactory;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -59,11 +61,10 @@ public class DataStreamJob {
         env.setParallelism(1);
 
         Configuration flinkConfig = GlobalConfiguration.loadConfiguration();
-        env.configure(flinkConfig);
 
         // YOU MUST MANUALLY LOAD CONFIG FOR S3 REGION TO TAKE EFFECT
-
-        // FileSystem.initialize(flinkConfig, null);
+        PluginManager pluginManager = PluginUtils.createPluginManagerFromRootFolder(flinkConfig);
+        FileSystem.initialize(flinkConfig, pluginManager);
 
         // <<<
 
@@ -166,8 +167,8 @@ public class DataStreamJob {
                         throw new RuntimeException();
                     }
 
-                    checkpointConfig.set(CheckpointingOptions.CHECKPOINT_STORAGE, checkpointStorage);
-                    checkpointConfig.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, checkpointDirectory);
+                    flinkConfig.set(CheckpointingOptions.CHECKPOINT_STORAGE, checkpointStorage);
+                    flinkConfig.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, checkpointDirectory);
                 }
             } else {
                 LOG.error(">>> [MAIN] CHECKPOINT STORAGE NOT IN FORMAT: filesystem | jobmanager");
@@ -185,7 +186,7 @@ public class DataStreamJob {
             LOG.warn(">>> [MAIN] DATABASE NAME IS SANITIZED: {} -> {}", databaseName, sanitizedDatabaseName);
         }
 
-        env.configure(checkpointConfig);
+        env.configure(flinkConfig);
         env.enableCheckpointing(checkpointInterval * 1000L);
 
         // BINLOG OFFSET
@@ -303,8 +304,8 @@ public class DataStreamJob {
                     fieldAssembler = addNullableFieldToSchema(fieldAssembler, sanitizedColumnName, columnType);
                 }
 
-                fieldAssembler = addFieldToSchema(fieldAssembler, "_db", "VARCHAR");
-                fieldAssembler = addFieldToSchema(fieldAssembler, "_tbl", "VARCHAR");
+                //fieldAssembler = addFieldToSchema(fieldAssembler, "_db", "VARCHAR");
+                //fieldAssembler = addFieldToSchema(fieldAssembler, "_tbl", "VARCHAR");
                 fieldAssembler = addFieldToSchema(fieldAssembler, "_op", "VARCHAR");
                 fieldAssembler = addFieldToSchema(fieldAssembler, "_ts", "BIGINT");
                 Schema avroSchema = fieldAssembler.endRecord();
@@ -333,8 +334,8 @@ public class DataStreamJob {
         final String sanitizedDDLTableName = String.format("_%s_ddl", sanitizedDatabaseName);
         SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(sanitizedDDLTableName).fields();
 
-        ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_db", "VARCHAR");
-        ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_tbl", "VARCHAR");
+        //ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_db", "VARCHAR");
+        //ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_tbl", "VARCHAR");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ddl", "VARCHAR");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ddl_db", "VARCHAR");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ddl_tbl", "VARCHAR");

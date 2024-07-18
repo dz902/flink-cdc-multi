@@ -1,6 +1,8 @@
 package org.example;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.serializer.SerializerFeature;
 import org.apache.avro.Schema;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
@@ -33,14 +35,17 @@ public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte,
 
         JSONObject valueJSONObject = JSONObject.parseObject(value);
         String sanitizedTableName = valueJSONObject
-            .getString("_tbl")
-            .replace('-', '_');
+            .getString("_tbl");
+        valueJSONObject.remove("_tbl");
+        valueJSONObject.remove("_db");
+
+        String filteredValue = JSON.toJSONString(valueJSONObject, SerializerFeature.WriteMapNullValue);
 
         Tuple2<OutputTag<String>, Schema> tagSchemaTuple = tableTagSchemaMap.get(sanitizedTableName);
         if (tagSchemaTuple != null) {
             LOG.debug(">>> [STOP-SIGNAL-CHECKER] SIDE OUTPUT TO: {}", tagSchemaTuple.f0);
-            LOG.trace(value);
-            ctx.output(tagSchemaTuple.f0, value);
+            LOG.trace(filteredValue);
+            ctx.output(tagSchemaTuple.f0, filteredValue);
         } else {
             LOG.error(">>> [STOP-SIGNAL-CHECKER] UNKNOWN TABLE: {}", sanitizedTableName);
             LOG.error(tableTagSchemaMap.toString());

@@ -31,16 +31,14 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
             return;
         }
 
-        JSONObject valueJSONObject = JSONObject.parseObject(value);
-        valueJSONObject.remove("_tbl");
-        valueJSONObject.remove("_db");
 
-        value = valueJSONObject.toJSONString();
         out.collect(value);
 
+        JSONObject valueJSONObject = JSONObject.parseObject(value);
         String ddlStatement = valueJSONObject.getString("_ddl");
+
         if (ddlStatement != null) {
-            LOG.info(">>> [APP/STOP-SIGNAL-SENDER] DDL FOUND, SENDING STOP SIGNAL");
+            LOG.info(">>> [STOP-SIGNAL-SENDER] DDL FOUND, SENDING STOP SIGNAL");
             LOG.info(value);
 
             // Register a timer to trigger after 10 seconds
@@ -55,7 +53,7 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
     @Override
     public void onTimer(long timestamp, OnTimerContext ctx, Collector<String> out) throws Exception {
         if (Boolean.TRUE.equals(stopSignalState.value())) {
-            LOG.info(">>> [APP/STOP-SIGNAL-SENDER] SENDING STOP SIGNAL");
+            LOG.info(">>> [STOP-SIGNAL-SENDER] SENDING STOP SIGNAL");
             // Send stop signal after 10 seconds
             out.collect("SIGNAL-STOP");
             stopSignalState.clear();

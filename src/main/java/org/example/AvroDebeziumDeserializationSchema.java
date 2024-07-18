@@ -41,6 +41,7 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
 
             String databaseName = ((Struct) sourceRecord.key()).getString("databaseName");
             Struct valueSource = value.getStruct("source");
+            String tableName = valueSource.getString("table");
 
             DateTimeFormatter dateFormatter = DateTimeFormatter
                 .ofPattern("yyyy-MM-dd")
@@ -50,7 +51,7 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
             String binlogPos = historyRecordPosition.getString("pos");
             String ddlStatement = historyRecord.getString("ddl");
 
-            if (databaseName.isBlank()) {
+            if (databaseName.isBlank() || tableName.isBlank()) {
                 String msg = String.format("INVALID DDL FOUND, MANUAL INTERVENTION NEEDED, STOPPING AT: (%s, %s)", binlogFile, binlogPos);
                 LOG.error(">>> [AVRO-DESERIALIZER] {}", msg);
                 LOG.error(
@@ -62,7 +63,6 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
             }
 
             String sanitizedDatabaseName = databaseName.replace('-', '_');
-            String tableName = valueSource.getString("table");
             String sanitizedTableName = tableName.replace('-', '_');
 
             ddlObject.put("_db", sanitizedDatabaseName);
