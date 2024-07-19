@@ -18,6 +18,7 @@ import org.apache.commons.cli.Options;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
+import org.apache.flink.api.common.serialization.SimpleStringEncoder;
 import org.apache.flink.api.java.functions.NullByteKeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.CheckpointingOptions;
@@ -91,6 +92,8 @@ public class DataStreamJob {
         }
 
         final String argConfig = cmd.getOptionValue("c");
+
+        // TODO: SET BINLOG OFFSET STORE, AUTO READ BACK
 
         JSONObject tableNameMap = null;
         JSONObject binlogOffset = null;
@@ -307,8 +310,6 @@ public class DataStreamJob {
                     fieldAssembler = addNullableFieldToSchema(fieldAssembler, sanitizedColumnName, columnType);
                 }
 
-                //fieldAssembler = addFieldToSchema(fieldAssembler, "_db", "VARCHAR");
-                //fieldAssembler = addFieldToSchema(fieldAssembler, "_tbl", "VARCHAR");
                 fieldAssembler = addFieldToSchema(fieldAssembler, "_op", "VARCHAR");
                 fieldAssembler = addFieldToSchema(fieldAssembler, "_ts", "BIGINT");
                 Schema avroSchema = fieldAssembler.endRecord();
@@ -337,8 +338,6 @@ public class DataStreamJob {
         final String sanitizedDDLTableName = String.format("_%s_ddl", sanitizedDatabaseName);
         SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(sanitizedDDLTableName).fields();
 
-        //ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_db", "VARCHAR");
-        //ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_tbl", "VARCHAR");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ddl", "VARCHAR");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ddl_db", "VARCHAR");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ddl_tbl", "VARCHAR");
@@ -404,6 +403,23 @@ public class DataStreamJob {
         }
 
         // <<<
+
+
+        Path binlogOffsetWriteBackPath = new Path(
+            sinkPath + "/offsets/" + sourceId + ".txt");
+        FileSink<String> binlogOffsetWriteBackSink = FileSink
+            .forRowFormat(binlogOffsetWriteBackPath, new SimpleStringEncoder<String>("UTF-8"))
+            .withRollingPolicy(
+                OnCheckpointRollingPolicy
+                    .build()
+            )
+            //.withBucketAssigner(new DatabaseTableDateBucketAssigner())
+            .build();
+
+        mainDataStream
+            .keyBy(new NullByteKeySelector<>())
+            .process(new BinlogOffsetStoreProcessFunction())
+            .writeAsText(sinkPath + "/offsets/" + sourceId + ".txt", FileSystem.WriteMode.OVERWRITE);
 
         // PRINT FROM MAIN STREAMS
         // TODO: DRYRUN MODE

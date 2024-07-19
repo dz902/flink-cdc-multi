@@ -31,7 +31,6 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
             return;
         }
 
-
         out.collect(value);
 
         JSONObject valueJSONObject = JSONObject.parseObject(value);

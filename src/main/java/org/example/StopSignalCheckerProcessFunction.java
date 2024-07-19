@@ -39,6 +39,13 @@ public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte,
         valueJSONObject.remove("_tbl");
         valueJSONObject.remove("_db");
 
+        // REMOVE BINLOG INFO, THESE ARE ONLY FOR BINLOG OFFSET WRITE BACK
+
+        if (valueJSONObject.get("_ddl") == null) {
+            valueJSONObject.remove("_binlog_file");
+            valueJSONObject.remove("_binlog_pos_end");
+        }
+
         String filteredValue = JSON.toJSONString(valueJSONObject, SerializerFeature.WriteMapNullValue);
 
         Tuple2<OutputTag<String>, Schema> tagSchemaTuple = tableTagSchemaMap.get(sanitizedTableName);

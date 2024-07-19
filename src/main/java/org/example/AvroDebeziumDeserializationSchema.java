@@ -1,21 +1,22 @@
 package org.example;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.ververica.cdc.debezium.DebeziumDeserializationSchema;
-import org.apache.flink.api.common.typeinfo.TypeInformation;
+import io.debezium.data.Envelope;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.util.Collector;
-import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Struct;
-import com.alibaba.fastjson.JSONObject;
-import io.debezium.data.Envelope;
+import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 
 public class AvroDebeziumDeserializationSchema implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -26,6 +27,7 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
         LOG.debug(String.valueOf(sourceRecord));
 
         Struct value = (Struct) sourceRecord.value();
+        Struct valueSource = value.getStruct("source");
 
         // DDL processing
         boolean isDDL = sourceRecord.valueSchema().field("historyRecord") != null;
@@ -40,7 +42,6 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
             JSONObject ddlObject = new JSONObject();
 
             String databaseName = ((Struct) sourceRecord.key()).getString("databaseName");
-            Struct valueSource = value.getStruct("source");
             String tableName = valueSource.getString("table");
 
             DateTimeFormatter dateFormatter = DateTimeFormatter
@@ -125,7 +126,6 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
             recordObject.put(field.name().replace('-', '_'), valueObject);
         }
 
-        Struct valueSource = value.getStruct("source");
         Envelope.Operation op = Envelope.operationFor(sourceRecord);
 
         // DATA
@@ -134,6 +134,17 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
         recordObject.put("_tbl", sanitizedTableName);
         recordObject.put("_op", op);
         recordObject.put("_ts", valueSource.getInt64("ts_ms"));
+
+        Map<String, ?> sourceOffset = sourceRecord.sourceOffset();
+        String binlogFile = sourceOffset.get("file").toString();
+        String binlogPos = sourceOffset.get("pos").toString();
+
+        // EXTRA DATA, ONLY FOR BINLOG OFFSET WRITE BACK
+        // NOTE: WE HAVE TO USE STARTING BINLOG OFFSET UNLIKE DDL
+        // BECAUSE ENDING OFFSET COULD LAND US ON MID TRANSACTION AND FAIL
+
+        recordObject.put("_binlog_file", binlogFile);
+        recordObject.put("_binlog_pos_end", binlogPos);
 
         collector.collect(JSON.toJSONString(recordObject, SerializerFeature.WriteMapNullValue));
     }
