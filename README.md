@@ -9,6 +9,9 @@
     - `containerized.master.env.JAVA_HOME` = `/usr/lib/jvm/jre-11` (we use Java 11)
     - `containerized.taskmanager.env.JAVA_HOME` = `/usr/lib/jvm/jre-11`
     - `env.java.home` = `/usr/lib/jvm/jre-11`
-    - `classloader.resolve-order` = `parent-first` (there are multiple versions of some libs, without this Flink classloader will clash with Java classloader)
   - `core-site`
     - `fs.s3a.endpoint.region` = `cn-northwest-1` (if you are using non-global regions or custom region)
+  - Move `flink-s3` plugin to library and delete S3 plugin directory
+    - Even if we could load it in the `plugins` directory, the configurations are not loaded this way, still need this at least for this version of EMR 
+    - `sudo mv /usr/lib/flink/plugins/s3/*.jar /usr/lib/flink/lib`
+    - `sudo rmdir /usr/lib/flink/plugins/s3`
