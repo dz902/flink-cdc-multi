@@ -127,6 +127,9 @@ public class DataStreamJob {
                 }
 
                 configJSONString = content.toString();
+            } catch (Exception e) {
+                LOG.error(">>> [MAIN] CONFIG FS ERROR");
+                throw e;
             }
 
             JSONObject configJSON;

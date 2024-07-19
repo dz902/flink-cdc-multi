@@ -1,6 +1,9 @@
-/libs/
+/lib/
+/hadoop-libs/
+/conf/
 /debug/
 /out/
+/plugins/
 
 target/
 !.mvn/wrapper/maven-wrapper.jar
