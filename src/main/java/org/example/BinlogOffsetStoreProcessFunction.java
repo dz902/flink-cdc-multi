@@ -75,5 +75,7 @@ implements CheckpointListener {
         LOG.debug(">>> {}", lastRecord);
 
         this.outCollector.collect(lastRecord);
+
+        lastBinlogOffsetState.update(null);
     }
 }

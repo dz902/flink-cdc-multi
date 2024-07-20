@@ -49,7 +49,7 @@ public class AvroDebeziumDeserializationSchema implements DebeziumDeserializatio
                 .withZone(ZoneId.systemDefault());
 
             String binlogFile = historyRecordPosition.getString("file");
-            String binlogPos = historyRecordPosition.getString("pos");
+            Long binlogPos = historyRecordPosition.getLongValue("pos");
             String ddlStatement = historyRecord.getString("ddl");
 
             if (databaseName.isBlank() || tableName.isBlank()) {

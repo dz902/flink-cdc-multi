@@ -46,6 +46,8 @@ import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 
 import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.sql.*;
 import java.util.*;
@@ -93,10 +95,12 @@ public class DataStreamJob {
 
         final String argConfig = cmd.getOptionValue("c");
 
-        // TODO: SET BINLOG OFFSET STORE, AUTO READ BACK
+        // TODO: CREDENTIALS FROM AWS SECRETS MANAGER
 
         JSONObject tableNameMap = null;
         JSONObject binlogOffset = null;
+        String binlogOffsetStorePath = null;
+        String binlogOffsetStoreFilePath = null;
         String hostname = "localhost";
         int port = 3306;
         String username = "test";
@@ -110,15 +114,22 @@ public class DataStreamJob {
         int checkpointInterval = 30;
         Configuration checkpointConfig = new Configuration();
 
-        // TODO: WRITE CONFIGURATION BACK
         // TODO: ADD STATS TABLE
 
         if (argConfig != null) {
             LOG.info(">>> [MAIN] LOADING CONFIG FROM {}", argConfig);
 
             Path configPath = new Path(argConfig);
-            FileSystem configFS = configPath.getFileSystem();
-            String configJSONString;
+
+            FileSystem configFS;
+            try {
+                configFS = configPath.getFileSystem();
+            } catch (IOException e) {
+                LOG.error(">>> [MAIN] INVALID CONFIG PATH: {}", argConfig);
+                throw e;
+            }
+
+            String configJSONString = "";
 
             try (FSDataInputStream configInputStream = configFS.open(configPath)) {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(configInputStream));
@@ -131,7 +142,8 @@ public class DataStreamJob {
 
                 configJSONString = content.toString();
             } catch (Exception e) {
-                LOG.error(">>> [MAIN] CONFIG FS ERROR");
+                LOG.error(">>> [MAIN] CONFIG FILE ERROR");
+                LOG.error(configJSONString);
                 throw e;
             }
 
@@ -150,6 +162,7 @@ public class DataStreamJob {
                 LOG.info(">>> [MAIN] LOADED TABLE NAME MAP: {}", tableNameMap);
             }
 
+            binlogOffsetStorePath = configJSON.getString("binlog.offset.store.path");
             binlogOffset = configJSON.getJSONObject("binlog.offset");
             sinkPath = configJSON.getString("sink.path");
             sourceId = configJSON.getString("source.id");
@@ -198,14 +211,70 @@ public class DataStreamJob {
         // BINLOG OFFSET
 
         StartupOptions startupOptions = StartupOptions.initial();
-        if (binlogOffset != null) {
+
+        if (binlogOffsetStorePath != null && !binlogOffsetStorePath.isBlank()) {
+            if (binlogOffset != null) {
+                String msg = "BINLOG STORE AND EXPLICIT BINLOG OFFSET CANNOT BE USED TOGETHER";
+                LOG.error(">>> [MAIN] {}", msg);
+                throw new RuntimeException(msg);
+            }
+
+
+            // TODO: MANUAL BINLOG OFFSET ID OVERRIDE, ONE SOURCE MAY HAVE MULTIPLE JOBS
+            binlogOffsetStoreFilePath = binlogOffsetStorePath + String.format("/%s_offset.txt", sourceId);
+
+            LOG.info(">>> [MAIN] LOADING BINLOG OFFSET FROM STORE: {}", binlogOffsetStoreFilePath);
+
+            Path storeFilePath = new Path(binlogOffsetStoreFilePath);
+
+            FileSystem storeFS;
+            try {
+                storeFS = storeFilePath.getFileSystem();
+            } catch (IOException e) {
+                LOG.error(">>> [MAIN] INVALID BINLOG OFFSET STORE PATH: {}", binlogOffsetStorePath);
+                throw e;
+            }
+
+            String storeString = "";
+
+            try (FSDataInputStream storeInputStream = storeFS.open(storeFilePath)) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(storeInputStream));
+
+                StringBuilder content = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    content.append(line).append("\n");
+                }
+
+                storeString = content.toString();
+
+                String[] storeStringSplits = storeString.trim().split(",");
+                String binlogOffsetFile = storeStringSplits[0];
+                long binlogOffsetPos = Long.parseLong(storeStringSplits[1]);
+
+                if (binlogOffsetFile != null && binlogOffsetPos > 0) {
+                    LOG.info(">>> [MAIN] BINLOG OFFSET LOADED: {},{}", binlogOffsetFile, binlogOffsetPos);
+                    startupOptions = StartupOptions.specificOffset(binlogOffsetFile, binlogOffsetPos);
+                } else {
+                    String msg = "BINLOG OFFSET NOT IN FORMAT: file,pos";
+                    LOG.error(">>> [MAIN] {}", msg);
+                    throw new RuntimeException(msg);
+                }
+            } catch (FileNotFoundException e) {
+                LOG.info(">>> [MAIN] BINLOG OFFSET STORE DOES NOT EXIST, SNAPSHOT + CDC");
+            } catch (Exception e) {
+                LOG.error(">>> [MAIN] BINLOG OFFSET STORE ERROR");
+                LOG.error(storeString);
+                throw e;
+            }
+        } else if (binlogOffset != null) {
             String binlogOffsetFile = binlogOffset.getString("file");
             long binlogOffsetPos = binlogOffset.getLongValue("pos");
 
             if (binlogOffsetFile != null && binlogOffsetPos > 0) {
                 startupOptions = StartupOptions.specificOffset(binlogOffsetFile, binlogOffsetPos);
             } else {
-                LOG.error(">>> [MAIN] BINLOG OFFSET NOT IN FORMAT: { \"file\": string, \"pos\": int }.");
+                LOG.error(">>> [MAIN] BINLOG OFFSET NOT IN FORMAT: { \"file\": string, \"pos\": int }");
                 throw new RuntimeException();
             }
 
@@ -339,7 +408,6 @@ public class DataStreamJob {
         SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(sanitizedDDLTableName).fields();
 
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ddl", "VARCHAR");
-        ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ddl_db", "VARCHAR");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ddl_tbl", "VARCHAR");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_ts", "BIGINT");
         ddlFieldAssembler = addFieldToSchema(ddlFieldAssembler, "_binlog_file", "VARCHAR");
@@ -405,21 +473,24 @@ public class DataStreamJob {
         // <<<
 
 
-        Path binlogOffsetWriteBackPath = new Path(
-            sinkPath + "/offsets/" + sourceId + ".txt");
-        FileSink<String> binlogOffsetWriteBackSink = FileSink
-            .forRowFormat(binlogOffsetWriteBackPath, new SimpleStringEncoder<String>("UTF-8"))
-            .withRollingPolicy(
-                OnCheckpointRollingPolicy
-                    .build()
-            )
-            //.withBucketAssigner(new DatabaseTableDateBucketAssigner())
-            .build();
+        if (binlogOffsetStoreFilePath != null && !binlogOffsetStoreFilePath.isBlank()) {
+            LOG.info(">>> [MAIN] CREATING BINLOG OFFSET STORE SINK");
 
-        mainDataStream
-            .keyBy(new NullByteKeySelector<>())
-            .process(new BinlogOffsetStoreProcessFunction())
-            .writeAsText(sinkPath + "/offsets/" + sourceId + ".txt", FileSystem.WriteMode.OVERWRITE);
+            Path path = new Path(binlogOffsetStoreFilePath);
+            FileSink<String> sink = FileSink
+                .forRowFormat(path, new SimpleStringEncoder<String>("UTF-8"))
+                .withRollingPolicy(
+                    OnCheckpointRollingPolicy
+                        .build()
+                )
+                .build();
+
+            mainDataStream
+                .keyBy(new NullByteKeySelector<>())
+                .process(new BinlogOffsetStoreProcessFunction())
+                .addSink(new SingleFileSinkFunction(new Path(binlogOffsetStoreFilePath)))
+                .setParallelism(1);
+        }
 
         // PRINT FROM MAIN STREAMS
         // TODO: DRYRUN MODE
