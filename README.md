@@ -50,6 +50,7 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - (planned) Reading credentials from AWS Secrets Manager, AWS Parameters Store or other configuration managers for better security
   - (planned) Parquet compaction, a separate job
   - (planned) Dry-run mode, printing to console instead of writing to files
+  - (planned) Auto-generate target `CREATE TABLE` SQL
 
 ## Quick Start
 
