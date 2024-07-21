@@ -1,4 +1,4 @@
-package org.example;
+package org.example.bucketassigners;
 
 import org.apache.avro.generic.GenericRecord;
 import org.apache.flink.core.io.SimpleVersionedSerializer;

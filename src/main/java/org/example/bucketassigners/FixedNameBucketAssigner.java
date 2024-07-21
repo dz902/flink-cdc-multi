@@ -1,4 +1,4 @@
-package org.example;
+package org.example.bucketassigners;
 
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.streaming.api.functions.sink.filesystem.BucketAssigner;

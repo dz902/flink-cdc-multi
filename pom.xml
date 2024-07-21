@@ -95,6 +95,11 @@ under the License.
 			<version>${flink.cdc.version}</version>
 		</dependency>
 		<dependency>
+			<groupId>com.ververica</groupId>
+			<artifactId>flink-connector-mongodb-cdc</artifactId>
+			<version>${flink.cdc.version}</version>
+		</dependency>
+		<dependency>
 			<groupId>org.apache.flink</groupId>
 			<artifactId>flink-shaded-guava</artifactId>
 			<version>${flink.guava.version}</version>
@@ -108,6 +113,11 @@ under the License.
 		<dependency>
 			<groupId>io.debezium</groupId>
 			<artifactId>debezium-connector-mysql</artifactId>
+			<version>${debezium.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>io.debezium</groupId>
+			<artifactId>debezium-connector-mongodb</artifactId>
 			<version>${debezium.version}</version>
 		</dependency>
 		<dependency>

@@ -44,6 +44,12 @@ import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
+import org.example.bucketassigners.DatabaseTableDateBucketAssigner;
+import org.example.deserializers.AvroDebeziumDeserializer;
+import org.example.processfunctions.BinlogOffsetStoreProcessFunction;
+import org.example.processfunctions.DelayedStopSignalProcessFunction;
+import org.example.processfunctions.StopSignalCheckerProcessFunction;
+import org.example.sinkfunctions.SingleFileSinkFunction;
 
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
@@ -308,7 +314,7 @@ public class DataStreamJob {
             .serverTimeZone(timezone)
             .scanNewlyAddedTableEnabled(true)
             .startupOptions(startupOptions)
-            .deserializer(new AvroDebeziumDeserializationSchema())
+            .deserializer(new AvroDebeziumDeserializer())
             .includeSchemaChanges(true)
             .debeziumProperties(debeziumProperties)
             .build();

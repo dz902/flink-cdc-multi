@@ -1,4 +1,4 @@
-package org.example;
+package org.example.deserializers;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -18,7 +18,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
-public class AvroDebeziumDeserializationSchema implements DebeziumDeserializationSchema<String> {
+public class AvroDebeziumDeserializer implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
 
     @Override

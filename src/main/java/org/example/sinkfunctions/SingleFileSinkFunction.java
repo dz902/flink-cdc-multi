@@ -1,4 +1,4 @@
-package org.example;
+package org.example.sinkfunctions;
 
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.core.fs.FileSystem;
