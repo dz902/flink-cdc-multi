@@ -7,6 +7,7 @@ import org.apache.commons.cli.*;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.connector.source.Source;
+import org.apache.flink.api.java.functions.NullByteKeySelector;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
@@ -17,15 +18,21 @@ import org.apache.flink.core.plugin.PluginManager;
 import org.apache.flink.core.plugin.PluginUtils;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.util.StringUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.LoggerConfig;
+import org.example.processfunctions.TimestampOffsetStoreProcessFunction;
+import org.example.sinkfunctions.SingleFileSinkFunction;
 import org.example.streamers.MongoStreamer;
 import org.example.streamers.Streamer;
+import org.example.utils.Thrower;
+import org.example.utils.Validator;
 
 import java.io.BufferedReader;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Arrays;
@@ -40,8 +47,10 @@ public class FlinkCDCMulti {
     private static JSONObject configJSON = new JSONObject();
     private static String sourceType;
     private static JSONObject tableNameMap = new JSONObject();
+    private static String offsetValue;
     private static Streamer streamer;
     private static DataStream<String> sourceStream;
+    private static DataStream<String> offsetStream;
     private static StreamExecutionEnvironment env;
 
     public static void main(String[] args) throws Exception {
@@ -55,9 +64,11 @@ public class FlinkCDCMulti {
 
         configureCheckpoint();
         configureTableNameMap();
+        configureOffset();
 
         createStreamer();
         createSourceStream();
+        createOffsetStoreStream();
 
         addDefaultPrintSink();
         setFlinkRestartStrategy();
@@ -97,6 +108,66 @@ public class FlinkCDCMulti {
         env.execute("JOB-" + sourceType);
     }
 
+    private static void configureOffset() throws IOException {
+        offsetValue = configJSON.getString("offset.value");
+
+        if (!StringUtils.isNullOrWhitespaceOnly(offsetValue)) {
+            LOG.info(">>> [MAIN] OFFSET VALUE: {}", offsetValue);
+            return;
+        }
+
+        String offsetStorePath = configJSON.getString("offset.store.path");
+        String sourceId = Validator.ensureNotEmpty("source.id", configJSON.getString("source.id"));
+
+        if (StringUtils.isNullOrWhitespaceOnly(offsetStorePath)) {
+            LOG.info(">>> [MAIN] NO OFFSET PATH SET");
+        }
+
+        String offsetStoreFilePath = offsetStorePath + String.format("/%s_offset.txt", sourceId);
+
+        LOG.info(">>> [MAIN] LOADING OFFSET FROM PATH: {}", offsetStoreFilePath);
+
+        Path storeFilePath = new Path(offsetStoreFilePath);
+
+        FileSystem storeFS = null;
+        try {
+            storeFS = storeFilePath.getFileSystem();
+        } catch (IOException e) {
+            Thrower.errAndThrow(
+                "MAIN",
+                String.format("INVALID BINLOG OFFSET STORE PATH: %s", offsetStoreFilePath)
+            );
+        }
+
+        String offsetValue = "";
+
+        try (FSDataInputStream storeInputStream = storeFS.open(storeFilePath)) {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(storeInputStream));
+
+            StringBuilder content = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line).append("\n");
+            }
+
+            offsetValue = content.toString();
+        } catch (FileNotFoundException e) {
+            LOG.info(">>> [MAIN] OFFSET STORE DOES NOT EXIST, SNAPSHOT + CDC");
+        } catch (Exception e) {
+            LOG.error(">>> [MAIN] OFFSET STORE ERROR");
+            LOG.error(FlinkCDCMulti.offsetValue);
+            throw e;
+        }
+
+        if (StringUtils.isNullOrWhitespaceOnly(offsetValue)) {
+            LOG.info(">>> [MAIN] EMPTY OFFSET STORE, SNAP + CDC");
+            return;
+        }
+
+        LOG.info(">>> [MAIN] USING OFFSET: {}", offsetValue);
+        configJSON.put("offset.value", offsetValue);
+    }
+
     private static void createStreamer() {
         if (sourceType == null || sourceType.isBlank()) {
             String msg = "SOURCE TYPE NOT SPECIFIED";
@@ -113,6 +184,22 @@ public class FlinkCDCMulti {
                 LOG.error(">>> [MAIN] {}", msg);
                 throw new RuntimeException(msg);
         }
+    }
+
+    private static void createOffsetStoreStream() {
+        String offsetStorePath = configJSON.getString("offset.store.path");
+
+        if (StringUtils.isNullOrWhitespaceOnly(offsetStorePath)) {
+            return;
+        }
+
+        LOG.info(">>> [MAIN] CREATING OFFSET STREAM");
+
+        sourceStream
+            .keyBy(new NullByteKeySelector<>())
+            .process(new TimestampOffsetStoreProcessFunction())
+            .addSink(new SingleFileSinkFunction(new Path(offsetStorePath)))
+            .setParallelism(1);
     }
 
     private static void processCLIOptions(String[] args) throws IOException, ParseException {

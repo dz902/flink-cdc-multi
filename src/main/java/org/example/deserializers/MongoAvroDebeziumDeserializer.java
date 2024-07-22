@@ -4,7 +4,6 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.ververica.cdc.debezium.DebeziumDeserializationSchema;
-import io.debezium.data.Envelope;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.util.Collector;
@@ -13,6 +12,7 @@ import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.example.utils.JSONUtils;
+import org.example.utils.Thrower;
 
 public class MongoAvroDebeziumDeserializer implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -45,16 +45,34 @@ public class MongoAvroDebeziumDeserializer implements DebeziumDeserializationSch
             sanitizedRecordObject.put(sanitizedFieldName, recordObject.get(fieldName));
         }
 
-        Envelope.Operation op = Envelope.operationFor(sourceRecord);
-
         // DATA
 
-        recordObject.put("_db", sanitizedDatabaseName);
-        recordObject.put("_coll", sanitizedCollectionName);
-        recordObject.put("_op", op);
-        recordObject.put("_ts", value.getInt64("ts_ms"));
+        String op = value.getString("operationType").toUpperCase();
 
-        collector.collect(JSON.toJSONString(recordObject, SerializerFeature.WriteMapNullValue));
+        switch (op) {
+            case "INSERT":
+                boolean isSnapshotting = Boolean.parseBoolean(
+                    value.getStruct("source").getString("snapshot")
+                );
+
+                if (isSnapshotting) {
+                    op = "READ";
+                }
+
+                break;
+            case "UPDATE":
+            case "DELETE":
+                break;
+            default:
+                Thrower.errAndThrow("MONGO-DESERIALIZER", String.format("UNKNOWN OPERATION: %s", op));
+        }
+
+        sanitizedRecordObject.put("_db", sanitizedDatabaseName);
+        sanitizedRecordObject.put("_coll", sanitizedCollectionName);
+        sanitizedRecordObject.put("_op", op);
+        sanitizedRecordObject.put("_ts", value.getInt64("ts_ms"));
+
+        collector.collect(JSON.toJSONString(sanitizedRecordObject, SerializerFeature.WriteMapNullValue));
     }
 
     @Override

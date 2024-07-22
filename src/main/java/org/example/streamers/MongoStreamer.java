@@ -2,6 +2,7 @@ package org.example.streamers;
 
 import com.alibaba.fastjson.JSONObject;
 import com.ververica.cdc.connectors.mongodb.source.MongoDBSource;
+import com.ververica.cdc.connectors.base.options.StartupOptions;
 import org.apache.flink.util.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,6 +17,7 @@ public class MongoStreamer implements Streamer {
     private final String collectionName;
     private final String username;
     private final String password;
+    private final String offsetValue;
 
     public MongoStreamer(JSONObject configJSON) {
         // TODO: SUPPORT DB LEVEL CDC FOR MONGODB v4+
@@ -27,6 +29,7 @@ public class MongoStreamer implements Streamer {
         this.collectionName = Validator.ensureNotEmpty("source.collection.name", configJSON.getString("source.collection.name"));
         this.username = configJSON.getString("source.username");
         this.password = configJSON.getString("source.password");
+        this.offsetValue = configJSON.getString("offset.value");
 
         if (this.databaseName.matches("(?i)^(?:admin|config|local)$")) {
             Thrower.errAndThrow(
@@ -49,6 +52,18 @@ public class MongoStreamer implements Streamer {
     }
 
     public MongoDBSource<String> getSource() {
+        StartupOptions startupOptions;
+
+        if (StringUtils.isNullOrWhitespaceOnly(offsetValue)) {
+            startupOptions = StartupOptions.initial();
+        } else {
+            if (!offsetValue.matches("^[1-9][0-9]*$")) {
+                Thrower.errAndThrow("MONGO-STREAMER", String.format("OFFSET NOT IN TIMESTAMP MILLISECONDS FORMAT: %s", offsetValue));
+            }
+
+            startupOptions = StartupOptions.timestamp(Long.parseLong(offsetValue));
+        }
+
         return MongoDBSource.<String>builder()
             .hosts(hosts)
             .scheme("mongodb")
@@ -57,6 +72,7 @@ public class MongoStreamer implements Streamer {
             .databaseList(databaseName)
             .collectionList(collectionName)
             .deserializer(new MongoAvroDebeziumDeserializer())
+            .startupOptions(startupOptions)
             .build();
     }
 }
