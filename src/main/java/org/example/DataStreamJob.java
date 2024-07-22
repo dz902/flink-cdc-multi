@@ -45,7 +45,7 @@ import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.example.bucketassigners.DatabaseTableDateBucketAssigner;
-import org.example.deserializers.AvroDebeziumDeserializer;
+import org.example.deserializers.MySQLAvroDebeziumDeserializer;
 import org.example.processfunctions.BinlogOffsetStoreProcessFunction;
 import org.example.processfunctions.DelayedStopSignalProcessFunction;
 import org.example.processfunctions.StopSignalCheckerProcessFunction;
@@ -314,7 +314,7 @@ public class DataStreamJob {
             .serverTimeZone(timezone)
             .scanNewlyAddedTableEnabled(true)
             .startupOptions(startupOptions)
-            .deserializer(new AvroDebeziumDeserializer())
+            .deserializer(new MySQLAvroDebeziumDeserializer())
             .includeSchemaChanges(true)
             .debeziumProperties(debeziumProperties)
             .build();
