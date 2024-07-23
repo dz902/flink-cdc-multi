@@ -6,17 +6,12 @@ import com.ververica.cdc.connectors.mysql.table.StartupOptions;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.io.DatumReader;
-import org.apache.avro.io.Decoder;
-import org.apache.avro.io.DecoderFactory;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.Options;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
-import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.serialization.SimpleStringEncoder;
 import org.apache.flink.api.java.functions.NullByteKeySelector;
@@ -45,10 +40,11 @@ import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.example.bucketassigners.DatabaseTableDateBucketAssigner;
-import org.example.deserializers.MySQLAvroDebeziumDeserializer;
-import org.example.processfunctions.BinlogOffsetStoreProcessFunction;
-import org.example.processfunctions.DelayedStopSignalProcessFunction;
-import org.example.processfunctions.StopSignalCheckerProcessFunction;
+import org.example.deserializers.MySQLDebeziumToJSONDeserializer;
+import org.example.processfunctions.mysql.BinlogOffsetStoreProcessFunction;
+import org.example.processfunctions.mysql.DelayedStopSignalProcessFunction;
+import org.example.processfunctions.mysql.StopSignalCheckerProcessFunction;
+import org.example.richmapfunctions.JSONToGenericRecordMapFunction;
 import org.example.sinkfunctions.SingleFileSinkFunction;
 
 import java.io.BufferedReader;
@@ -314,7 +310,7 @@ public class DataStreamJob {
             .serverTimeZone(timezone)
             .scanNewlyAddedTableEnabled(true)
             .startupOptions(startupOptions)
-            .deserializer(new MySQLAvroDebeziumDeserializer())
+            .deserializer(new MySQLDebeziumToJSONDeserializer())
             .includeSchemaChanges(true)
             .debeziumProperties(debeziumProperties)
             .build();
@@ -450,7 +446,7 @@ public class DataStreamJob {
 
             SingleOutputStreamOperator<GenericRecord> sideOutputStream = mainDataStream
                 .getSideOutput(outputTag)
-                .map(new JsonToGenericRecordMapFunction(avroSchema))
+                .map(new JSONToGenericRecordMapFunction(avroSchema))
                 .returns(new GenericRecordAvroTypeInfo(avroSchema));
 
             ParquetWriterFactory<GenericRecord> compressedParquetWriterFactory = new ParquetWriterFactory<>(
@@ -582,28 +578,4 @@ public class DataStreamJob {
         return fieldAssembler;
     }
 
-    public static class JsonToGenericRecordMapFunction extends RichMapFunction<String, GenericRecord> {
-        private final String schemaString;
-        private transient Schema avroSchema;
-
-        public JsonToGenericRecordMapFunction(Schema schema) {
-            this.schemaString = schema.toString();
-        }
-
-        @Override
-        public void open(Configuration parameters) throws Exception {
-            super.open(parameters);
-            this.avroSchema = new Schema.Parser().parse(schemaString);
-        }
-
-        @Override
-        public GenericRecord map(String value) throws Exception {
-            LOG.debug(">>> [MAIN] CONVERT JSON STRING TO AVRO");
-            LOG.trace(value);
-            LOG.trace(avroSchema);
-            DatumReader<GenericRecord> reader = new GenericDatumReader<>(avroSchema);
-            Decoder decoder = DecoderFactory.get().jsonDecoder(avroSchema, value);
-            return reader.read(null, decoder);
-        }
-    }
 }

@@ -18,7 +18,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
-public class MySQLAvroDebeziumDeserializer implements DebeziumDeserializationSchema<String> {
+public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
 
     @Override

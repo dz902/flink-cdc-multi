@@ -3,28 +3,44 @@ package org.example;
 import com.alibaba.fastjson.JSONObject;
 import com.ververica.cdc.connectors.base.source.assigner.state.PendingSplitsState;
 import com.ververica.cdc.connectors.base.source.meta.split.SourceSplitBase;
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
+import org.apache.avro.generic.GenericRecord;
 import org.apache.commons.cli.*;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.connector.source.Source;
 import org.apache.flink.api.java.functions.NullByteKeySelector;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
+import org.apache.flink.connector.file.sink.FileSink;
 import org.apache.flink.core.fs.FSDataInputStream;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.core.plugin.PluginManager;
 import org.apache.flink.core.plugin.PluginUtils;
+import org.apache.flink.formats.avro.typeutils.GenericRecordAvroTypeInfo;
+import org.apache.flink.formats.parquet.ParquetWriterFactory;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.OnCheckpointRollingPolicy;
+import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.LoggerConfig;
-import org.example.processfunctions.TimestampOffsetStoreProcessFunction;
+import org.apache.parquet.avro.AvroParquetWriter;
+import org.apache.parquet.hadoop.metadata.CompressionCodecName;
+import org.example.bucketassigners.DatabaseTableDateBucketAssigner;
+import org.example.processfunctions.mongodb.CollectionAssignerProcessFunction;
+import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
+import org.example.processfunctions.mysql.DelayedStopSignalProcessFunction;
+import org.example.richmapfunctions.JSONToGenericRecordMapFunction;
 import org.example.sinkfunctions.SingleFileSinkFunction;
 import org.example.streamers.MongoStreamer;
 import org.example.streamers.Streamer;
@@ -36,7 +52,9 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 public class FlinkCDCMulti {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -46,12 +64,15 @@ public class FlinkCDCMulti {
     private static Boolean argDebugMode = false;
     private static JSONObject configJSON = new JSONObject();
     private static String sourceType;
-    private static JSONObject tableNameMap = new JSONObject();
+    private static String sourceId;
+    private static String sinkPath;
     private static String offsetValue;
+    private static String offsetStorePath;
+    private static String offsetStoreFilePath;
     private static Streamer streamer;
     private static DataStream<String> sourceStream;
-    private static DataStream<String> offsetStream;
     private static StreamExecutionEnvironment env;
+    private static Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
 
     public static void main(String[] args) throws Exception {
         createFlinkStreamingEnv();
@@ -67,8 +88,9 @@ public class FlinkCDCMulti {
         configureOffset();
 
         createStreamer();
-        fetchSchema();
+        createTagSchemaMap();
         createSourceStream();
+        createSideStreams();
         createOffsetStoreStream();
 
         addDefaultPrintSink();
@@ -77,9 +99,8 @@ public class FlinkCDCMulti {
         startFlinkJob();
     }
 
-    private static void fetchSchema() {
-        streamer.getAvroSchemaMap();
-        System.exit(1);
+    private static void createTagSchemaMap() {
+        tagSchemaMap = streamer.createTagSchemaMap();
     }
 
     private static void createFlinkStreamingEnv() {
@@ -122,14 +143,20 @@ public class FlinkCDCMulti {
             return;
         }
 
-        String offsetStorePath = configJSON.getString("offset.store.path");
         String sourceId = Validator.ensureNotEmpty("source.id", configJSON.getString("source.id"));
 
-        if (StringUtils.isNullOrWhitespaceOnly(offsetStorePath)) {
-            LOG.info(">>> [MAIN] NO OFFSET PATH SET");
+        offsetStoreFilePath = configJSON.getString("offset.store.file.path");
+
+        if (StringUtils.isNullOrWhitespaceOnly(offsetStoreFilePath)) {
+            offsetStorePath = configJSON.getString("offset.store.path");
+            offsetStoreFilePath = String.format("%s/%s_offset.txt", offsetStorePath, sourceId);
         }
 
-        String offsetStoreFilePath = offsetStorePath + String.format("/%s_offset.txt", sourceId);
+        if (StringUtils.isNullOrWhitespaceOnly(offsetStoreFilePath)) {
+            LOG.info(">>> [MAIN] NO OFFSET STORE PATH SET, FEATURE DISABLED");
+        } else {
+            LOG.info(">>> [MAIN] OFFSET STORE PATH: {}", offsetStoreFilePath);
+        }
 
         LOG.info(">>> [MAIN] LOADING OFFSET FROM PATH: {}", offsetStoreFilePath);
 
@@ -145,7 +172,7 @@ public class FlinkCDCMulti {
             );
         }
 
-        String offsetValue = "";
+        String offsetValueFromStore = "";
 
         try (FSDataInputStream storeInputStream = storeFS.open(storeFilePath)) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(storeInputStream));
@@ -156,7 +183,7 @@ public class FlinkCDCMulti {
                 content.append(line).append("\n");
             }
 
-            offsetValue = content.toString();
+            offsetValueFromStore = content.toString().trim();
         } catch (FileNotFoundException e) {
             LOG.info(">>> [MAIN] OFFSET STORE DOES NOT EXIST, SNAPSHOT + CDC");
         } catch (Exception e) {
@@ -165,13 +192,13 @@ public class FlinkCDCMulti {
             throw e;
         }
 
-        if (StringUtils.isNullOrWhitespaceOnly(offsetValue)) {
+        if (StringUtils.isNullOrWhitespaceOnly(offsetValueFromStore)) {
             LOG.info(">>> [MAIN] EMPTY OFFSET STORE, SNAP + CDC");
             return;
         }
 
-        LOG.info(">>> [MAIN] USING OFFSET: {}", offsetValue);
-        configJSON.put("offset.value", offsetValue);
+        LOG.info(">>> [MAIN] USING OFFSET: {}", offsetValueFromStore);
+        configJSON.put("offset.value", offsetValueFromStore);
     }
 
     private static void createStreamer() {
@@ -193,8 +220,6 @@ public class FlinkCDCMulti {
     }
 
     private static void createOffsetStoreStream() {
-        String offsetStorePath = configJSON.getString("offset.store.path");
-
         if (StringUtils.isNullOrWhitespaceOnly(offsetStorePath)) {
             return;
         }
@@ -204,8 +229,56 @@ public class FlinkCDCMulti {
         sourceStream
             .keyBy(new NullByteKeySelector<>())
             .process(new TimestampOffsetStoreProcessFunction())
-            .addSink(new SingleFileSinkFunction(new Path(offsetStorePath)))
+            .setParallelism(1)
+            .addSink(new SingleFileSinkFunction(new Path(offsetStoreFilePath)))
             .setParallelism(1);
+    }
+
+    private static void createSideStreams() {
+        Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap = tagSchemaMap.entrySet().stream()
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
+            ));
+
+        SingleOutputStreamOperator<String> mainDataStream = sourceStream
+            .keyBy(new NullByteKeySelector<>())
+            .process(new DelayedStopSignalProcessFunction())
+            .setParallelism(1)
+            .keyBy(new NullByteKeySelector<>())
+            .process(new CollectionAssignerProcessFunction(tagSchemaStringMap))
+            .setParallelism(1);
+
+        for (Map.Entry<String, Tuple2<OutputTag<String>, Schema>> entry : tagSchemaMap.entrySet()) {
+            OutputTag<String> outputTag = entry.getValue().f0;
+            Schema avroSchema = entry.getValue().f1;
+
+            SingleOutputStreamOperator<GenericRecord> sideOutputStream = mainDataStream
+                .getSideOutput(outputTag)
+                .map(new JSONToGenericRecordMapFunction(avroSchema))
+                .returns(new GenericRecordAvroTypeInfo(avroSchema));
+
+            ParquetWriterFactory<GenericRecord> compressedParquetWriterFactory = new ParquetWriterFactory<>(
+                out -> AvroParquetWriter.<GenericRecord>builder(out).withSchema(avroSchema)
+                    .withDataModel(GenericData.get())
+                    .withCompressionCodec(CompressionCodecName.SNAPPY)
+                    .build()
+            );
+
+            Path outputPath = new Path(
+                String.format("%s/%s_%s", sinkPath, sourceId, outputTag.getId())
+            );
+            FileSink<GenericRecord> sink = FileSink
+                .forBulkFormat(outputPath, compressedParquetWriterFactory)
+                .withRollingPolicy(
+                    OnCheckpointRollingPolicy
+                        .build()
+                )
+                .withBucketAssigner(new DatabaseTableDateBucketAssigner())
+                .build();
+
+            sideOutputStream.sinkTo(sink).setParallelism(1);
+        }
     }
 
     private static void processCLIOptions(String[] args) throws IOException, ParseException {
@@ -253,6 +326,9 @@ public class FlinkCDCMulti {
             LOG.error(">>> [MAIN] CHECKPOINT STORAGE NOT IN FORMAT: filesystem | jobmanager");
             throw new RuntimeException();
         }
+
+
+        LOG.info(">>> [MAIN] CHECKPOINT INTERVAL: {}", checkpointInterval);
 
         env.configure(flinkConfig);
         env.enableCheckpointing(checkpointInterval * 1000L);
@@ -317,11 +393,13 @@ public class FlinkCDCMulti {
             throw new RuntimeException(msg);
         }
 
-        sourceType = configJSON.getString("source.type");
+        sourceId = Validator.ensureNotEmpty("source.id", configJSON.getString("source.id"));
+        sourceType = Validator.ensureNotEmpty("source.type", configJSON.getString("source.type"));
+        sinkPath = Validator.ensureNotEmpty("sink.path", configJSON.getString("sink.path"));
     }
 
     private static void configureTableNameMap() {
-        tableNameMap = configJSON.getJSONObject("table.name.map");
+        JSONObject tableNameMap = configJSON.getJSONObject("table.name.map");
 
         if (tableNameMap != null) {
             LOG.info(">>> [MAIN] LOADED TABLE NAME MAP: {}", tableNameMap);

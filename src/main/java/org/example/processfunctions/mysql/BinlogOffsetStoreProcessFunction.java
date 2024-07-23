@@ -1,4 +1,4 @@
-package org.example.processfunctions;
+package org.example.processfunctions.mysql;
 
 import com.alibaba.fastjson.JSONObject;
 import org.apache.flink.api.common.state.CheckpointListener;

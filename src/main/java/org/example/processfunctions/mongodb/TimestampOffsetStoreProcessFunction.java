@@ -1,4 +1,4 @@
-package org.example.processfunctions;
+package org.example.processfunctions.mongodb;
 
 import com.alibaba.fastjson.JSONObject;
 import org.apache.flink.api.common.state.CheckpointListener;
@@ -36,15 +36,15 @@ implements CheckpointListener {
         JSONObject valueObject = JSONObject.parseObject(value);
 
         String op = valueObject.getString("_op");
-
         if ("READ".equals(op)) {
-            // SNAPSHOTTING HAS NO TIMESTAMP
+            LOG.trace(">>> [TIMESTAMP-OFFSET-STORE] SKIP SNAPSHOTTING");
             return;
         }
 
         long timestamp = valueObject.getLongValue("_ts");
 
         if (timestamp > 0) {
+            LOG.trace(">>> [TIMESTAMP-OFFSET-STORE] SENDING TIMESTAMP: {}", timestamp);
             lastTimestampOffsetState.update(timestamp);
         }
     }

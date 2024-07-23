@@ -7,9 +7,12 @@ import org.apache.flink.api.connector.source.Source;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.OutputTag;
 
+import java.io.Serializable;
 import java.util.Map;
 
-public interface Streamer {
+// FOR SOME REASON KEYED FUNC WILL TRY TO SERIALIZE ITS PARENT WHICH IS THIS CLASS
+// SO WE NEED SERIALIZABLE
+public interface Streamer extends Serializable {
     Source<String, SourceSplitBase, PendingSplitsState> getSource();
-    Map<String, Tuple2<OutputTag<String>, Schema>> getAvroSchemaMap();
+    Map<String, Tuple2<OutputTag<String>, Schema>> createTagSchemaMap();
 }
