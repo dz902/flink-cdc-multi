@@ -256,6 +256,7 @@ public class FlinkCDCMulti {
             SingleOutputStreamOperator<GenericRecord> sideOutputStream = mainDataStream
                 .getSideOutput(outputTag)
                 .map(new JSONToGenericRecordMapFunction(avroSchema))
+                .setParallelism(1)
                 .returns(new GenericRecordAvroTypeInfo(avroSchema));
 
             ParquetWriterFactory<GenericRecord> compressedParquetWriterFactory = new ParquetWriterFactory<>(
@@ -277,7 +278,9 @@ public class FlinkCDCMulti {
                 .withBucketAssigner(new DatabaseTableDateBucketAssigner())
                 .build();
 
-            sideOutputStream.sinkTo(sink).setParallelism(1);
+            sideOutputStream
+                .sinkTo(sink)
+                .setParallelism(1);
         }
     }
 
