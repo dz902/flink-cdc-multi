@@ -67,6 +67,7 @@ public class FlinkCDCMulti {
         configureOffset();
 
         createStreamer();
+        fetchSchema();
         createSourceStream();
         createOffsetStoreStream();
 
@@ -74,6 +75,11 @@ public class FlinkCDCMulti {
         setFlinkRestartStrategy();
 
         startFlinkJob();
+    }
+
+    private static void fetchSchema() {
+        streamer.getAvroSchemaMap();
+        System.exit(1);
     }
 
     private static void createFlinkStreamingEnv() {

@@ -1,14 +1,25 @@
 package org.example.streamers;
 
 import com.alibaba.fastjson.JSONObject;
-import com.ververica.cdc.connectors.mongodb.source.MongoDBSource;
+import com.mongodb.client.*;
 import com.ververica.cdc.connectors.base.options.StartupOptions;
+import com.ververica.cdc.connectors.mongodb.source.MongoDBSource;
+import org.apache.avro.Schema;
+import org.apache.avro.SchemaBuilder.FieldAssembler;
+import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.bson.Document;
 import org.example.deserializers.MongoAvroDebeziumDeserializer;
+import org.example.utils.AvroUtils;
+import org.example.utils.NoOverwriteHashMap;
 import org.example.utils.Thrower;
 import org.example.utils.Validator;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class MongoStreamer implements Streamer {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -74,5 +85,49 @@ public class MongoStreamer implements Streamer {
             .deserializer(new MongoAvroDebeziumDeserializer())
             .startupOptions(startupOptions)
             .build();
+    }
+
+    public Map<String, Tuple2<OutputTag<String>, Schema>> getAvroSchemaMap() {
+        // DB.TABLE -> (OUTPUT-TAG, SCHEMA)
+        Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap = new HashMap<>();
+
+        // Connect to MongoDB
+        try (MongoClient mongoClient = MongoClients.create("mongodb://localhost:27017/my-cdc")) {
+            MongoDatabase database = mongoClient.getDatabase("my-cdc");
+            MongoCollection<Document> collection = database.getCollection("my_cdc");
+
+            // Sample size
+            int sampleSize = 100;
+
+            // Set to store field names
+
+            Map<String, Class<?>> fieldTypes = new NoOverwriteHashMap<>();
+            try (MongoCursor<Document> cursor = collection.find().limit(sampleSize).iterator()) {
+                while (cursor.hasNext()) {
+                    Document doc = cursor.next();
+                    for (Map.Entry<String, Object> entry : doc.entrySet()) {
+                        String fieldName = entry.getKey();
+                        Object value = entry.getValue();
+                        if (!fieldTypes.containsKey(fieldName)) {
+                            fieldTypes.put(fieldName, value != null ? value.getClass() : Object.class);
+                        }
+                    }
+                }
+            }
+
+            FieldAssembler<Schema> fieldAssembler = AvroUtils.createFieldAssemblerWithFieldTypes(fieldTypes);
+
+            AvroUtils.addFieldToFieldAssembler(fieldAssembler, "_op", String.class, false);
+            AvroUtils.addFieldToFieldAssembler(fieldAssembler, "_db", String.class, false);
+            AvroUtils.addFieldToFieldAssembler(fieldAssembler, "_coll", String.class, false);
+            AvroUtils.addFieldToFieldAssembler(fieldAssembler, "_ts", Long.class, false);
+
+            Schema avroSchema = fieldAssembler.endRecord();
+
+            // Print Avro schema
+            System.out.println(avroSchema.toString(true));
+        }
+
+        return tableTagSchemaMap;
     }
 }
