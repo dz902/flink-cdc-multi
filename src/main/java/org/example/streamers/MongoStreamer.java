@@ -27,6 +27,9 @@ public class MongoStreamer implements Streamer {
     private final String username;
     private final String password;
     private final String offsetValue;
+    // TODO: TS OFFSET IS NOT SUPPORTED BY v3.6 AND IS SILENTLY IGNORED BY FLINK-CDC
+    // ALSO FLINK-CDC DOES NOT DIRECTLY ACCEPT RESUME TOKEN SO MIGHT HAVE
+    // TO USE SAVEPOINT BECAUSE RESUME TOKEN IS SAVED AND USED FOR RESUMING INTERNALLY
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private String mongodbDeserializationMode;
 

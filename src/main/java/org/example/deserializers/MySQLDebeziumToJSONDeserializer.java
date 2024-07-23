@@ -13,6 +13,7 @@ import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.example.utils.Thrower;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -89,44 +90,54 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
         String sanitizedTableName = tableName.replace('-', '_');
 
         Struct after = value.getStruct("after");
+
+        String op = Envelope.operationFor(sourceRecord).toString();
         JSONObject recordObject = new JSONObject();
 
-        for (Field field : after.schema().fields()) {
-            Object o = after.get(field);
-
-            JSONObject valueObject = null;
-            if (o != null) {
-                String type;
-                switch (o.getClass().getSimpleName()) {
-                    case "Integer":
-                    case "Short":
-                        type = "int";
-                        break;
-                    case "Long":
-                        type = "long";
-                        break;
-                    case "Float":
-                        type = "float";
-                        break;
-                    case "Double":
-                        type = "double";
-                        break;
-                    case "Boolean":
-                        type = "boolean";
-                        break;
-                    default:
-                        type = "string";
-                        break;
-                }
-
-                valueObject = new JSONObject();
-                valueObject.put(type, o);
+        if (!op.equals("DELETE")) {
+            if (after == null) {
+                Thrower.errAndThrow(
+                    "DESERIALIZER",
+                    String.format("AFTER FIELD IS EMPTY FOR NON-DELETE EVENT: %s", op)
+                );
+                return;
             }
 
-            recordObject.put(field.name().replace('-', '_'), valueObject);
-        }
+            for (Field field : after.schema().fields()) {
+                Object o = after.get(field);
 
-        Envelope.Operation op = Envelope.operationFor(sourceRecord);
+                JSONObject valueObject = null;
+                if (o != null) {
+                    String type;
+                    switch (o.getClass().getSimpleName()) {
+                        case "Integer":
+                        case "Short":
+                            type = "int";
+                            break;
+                        case "Long":
+                            type = "long";
+                            break;
+                        case "Float":
+                            type = "float";
+                            break;
+                        case "Double":
+                            type = "double";
+                            break;
+                        case "Boolean":
+                            type = "boolean";
+                            break;
+                        default:
+                            type = "string";
+                            break;
+                    }
+
+                    valueObject = new JSONObject();
+                    valueObject.put(type, o);
+                }
+
+                recordObject.put(field.name().replace('-', '_'), valueObject);
+            }
+        }
 
         // DATA
 

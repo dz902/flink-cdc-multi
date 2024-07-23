@@ -56,8 +56,16 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
         String sanitizedDatabaseName = databaseName.replace('-', '_');
         String sanitizedCollectionName = collectionName.replace('-', '_');
 
-        Object fullDocument = value.get("fullDocument");
-        JSONObject recordObject = JSONObject.parseObject(JSONObject.toJSONString(fullDocument));
+        String op = value.getString("operationType").toUpperCase();
+
+        JSONObject recordObject;
+        if (op.equals("DELETE")) {
+            recordObject = new JSONObject();
+        } else {
+            Object fullDocument = value.get("fullDocument");
+            recordObject = JSONObject.parseObject(JSONObject.toJSONString(fullDocument));
+        }
+
         recordObject.put("_id", id);
 
         JSONObject sanitizedRecordObject = new JSONObject();
@@ -94,8 +102,6 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
                 }
             }
         }
-
-        String op = value.getString("operationType").toUpperCase();
 
         switch (op) {
             case "INSERT":
