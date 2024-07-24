@@ -7,6 +7,7 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.commons.cli.*;
+import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.connector.source.Source;
@@ -25,6 +26,7 @@ import org.apache.flink.formats.avro.typeutils.GenericRecordAvroTypeInfo;
 import org.apache.flink.formats.parquet.ParquetWriterFactory;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
+import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.OnCheckpointRollingPolicy;
 import org.apache.flink.util.OutputTag;
@@ -73,6 +75,7 @@ public class FlinkCDCMulti {
     private static DataStream<String> sourceStream;
     private static StreamExecutionEnvironment env;
     private static Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
+    private static JobExecutionResult jobExecutionResult;
 
     public static void main(String[] args) throws Exception {
         createFlinkStreamingEnv();
@@ -83,7 +86,7 @@ public class FlinkCDCMulti {
         enableDebugMode(argDebugMode);
         loadConfigJSON(argConfig);
 
-        configureCheckpoint();
+        configureCheckpointing();
         configureTableNameMap();
         configureOffset();
 
@@ -132,7 +135,8 @@ public class FlinkCDCMulti {
     }
 
     private static void startFlinkJob() throws Exception {
-        env.execute("JOB-" + sourceType);
+        jobExecutionResult = env.execute("JOB-" + sourceType);
+
     }
 
     private static void configureOffset() throws IOException {
@@ -306,14 +310,15 @@ public class FlinkCDCMulti {
         argConfig = cmd.getOptionValue("c");
     }
 
-    private static void configureCheckpoint() {
+    private static void configureCheckpointing() {
         int checkpointInterval = configJSON.getIntValue("checkpoint.interval") > 0 ? configJSON.getIntValue("checkpoint.interval") : 30;
         String checkpointStorage = Objects.requireNonNullElse(configJSON.getString("checkpoint.storage"), "jobmanager");
         String checkpointDirectory;
 
         if (checkpointStorage.equals("jobmanager") || checkpointStorage.equals("filesystem")) {
+            LOG.info(">>> [MAIN] LOADED CHECKPOINT STORAGE: {}", checkpointStorage);
+
             if (checkpointStorage.equals("filesystem")) {
-                LOG.info(">>> [MAIN] LOADED CHECKPOINT STORAGE: {}", checkpointStorage);
 
                 checkpointDirectory = configJSON.getString("checkpoint.directory");
 
@@ -324,10 +329,11 @@ public class FlinkCDCMulti {
 
                 flinkConfig.set(CheckpointingOptions.CHECKPOINT_STORAGE, checkpointStorage);
                 flinkConfig.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, checkpointDirectory);
+            } else {
+                LOG.warn(">>> [MAIN] CHECKPOINT STORAGE IN JOBMANAGER IS NOT RECOMMENDED FOR PRODUCTION");
             }
         } else {
-            LOG.error(">>> [MAIN] CHECKPOINT STORAGE NOT IN FORMAT: filesystem | jobmanager");
-            throw new RuntimeException();
+            Thrower.errAndThrow("MAIN",">>> [MAIN] CHECKPOINT STORAGE NOT IN FORMAT: filesystem | jobmanager");
         }
 
 
@@ -335,6 +341,9 @@ public class FlinkCDCMulti {
 
         env.configure(flinkConfig);
         env.enableCheckpointing(checkpointInterval * 1000L);
+        env.getCheckpointConfig().setExternalizedCheckpointCleanup(
+            CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION
+        );
     }
 
     private static void enableDebugMode(Boolean argDebugMode) {

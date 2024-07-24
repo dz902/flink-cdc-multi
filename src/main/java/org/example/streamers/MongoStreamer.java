@@ -9,6 +9,7 @@ import org.apache.avro.SchemaBuilder.FieldAssembler;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
+import org.apache.hadoop.util.VersionUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bson.Document;
@@ -32,6 +33,7 @@ public class MongoStreamer implements Streamer {
     // TO USE SAVEPOINT BECAUSE RESUME TOKEN IS SAVED AND USED FOR RESUMING INTERNALLY
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private String mongodbDeserializationMode;
+    private boolean compatibilityMode = false;
 
     public MongoStreamer(JSONObject configJSON) {
         // TODO: SUPPORT DB LEVEL CDC FOR MONGODB v4+
@@ -121,6 +123,18 @@ public class MongoStreamer implements Streamer {
 
         // Connect to MongoDB
         try (MongoClient mongoClient = MongoClients.create(String.format("mongodb://%s/%s", hosts, databaseName))) {
+            final MongoDatabase db = mongoClient.getDatabase(databaseName);
+            Document buildInfo = db.runCommand(new Document("buildInfo", 1));
+            String version = buildInfo.getString("version");
+
+            LOG.info(">>> [MONGO-STREAMER] MONGODB VERSION: {}", version);
+
+            if (VersionUtil.compareVersions(version, "4.0.0") < 0) {
+                LOG.warn(">>> [MONGO-STREAMER] MONGODB VERSION < 4.0, USING COMPATIBILITY MODE");
+                LOG.warn(">>> [MONGO-STREAMER] TIMESTAMP DOES NOT WORK, USE SAVEPOINTS INSTEAD");
+                compatibilityMode = true;
+            }
+
             final String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
             final String sanitizedCollectionName = Sanitizer.sanitize(collectionName);
 
