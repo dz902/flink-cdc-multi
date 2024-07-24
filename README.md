@@ -20,8 +20,11 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
 
 - Supported databases
   - MySQL
-    - developed and tested against `8.0.38`, but should also work on `5.x`)
-  - (in progress) MongoDB
+    - Developed and tested against `8.0.38`, but should also work on `5.x`)
+  - MongoDB
+    - Developed and tested against `3.6`
+      - Currently only syncs 1 table because `3.6` does not support watching db or deployment
+      - Supports timestamp offset but will not work on `3.6` as this version does not support this feature
 - Supported platforms
   - EMR 6.15.0 / Flink 1.17.1
     - This is a deliberate choice to make use of more mature versions of Flink
@@ -35,6 +38,7 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - Binlog offset store: Plain text file, comma separated
 - Features
   - A single job to sync all or some tables in a database
+    - (maybe) A single job to sync a whole deployment
   - No schema definition is required for source or target
   - When a DDL statement is received, auto stop task with a message
   - A special DDL table (`{source_id}_{db_name}__{db_name}_ddl`) is created for each job to record DDLs for your reference 
@@ -43,8 +47,11 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
     - (planned) Auto table name mapping when a DDL is met
   - Auto data partitioning based on message time
     - (planned) Data partitioning based on event time
-  - Snapshot + CDC, or CDC only, i.e. starting from any given binlog offset
-    - (planned) Snapshot only mode
+  - Snapshot only mode
+  - Snapshot conditions
+    - (in-dev) Snapshot only a subset of data for data refilling
+  - Snapshot + CDC mode
+  - CDC only mode, i.e. starting from any given binlog offset
   - Debug mode, using `--debug` to show verbose message during testing (turn off in production as this creates multiple logs for every binlog)
   - (planned) Job stats table for monitoring
   - (planned) Reading credentials from AWS Secrets Manager, AWS Parameters Store or other configuration managers for better security
@@ -89,3 +96,6 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - So for non-DDL statement we capture the starting binlog offset instead the ending one
   - This leads to repeated statements in last transaction
   - Downstream processors must be able to process such duplicate records in case of job restarts
+- Snapshot only mode will only stop when there is a CDC event
+  - Currently, the connector will not know whether a snapshot scan is completed until there is a CDC event
+  - (planned) We could add a timeout because snapshot scan is supposed to be continuous
