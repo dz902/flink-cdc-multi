@@ -13,21 +13,21 @@ import org.apache.logging.log4j.Logger;
 
 import java.util.Map;
 
-public class StopSignalCheckerProcessFunction extends KeyedProcessFunction<Byte, String, String> {
+public class SideInputProcessFunction extends KeyedProcessFunction<Byte, String, String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap;
 
-    public StopSignalCheckerProcessFunction(Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap) {
+    public SideInputProcessFunction(Map<String, Tuple2<OutputTag<String>, Schema>> tableTagSchemaMap) {
         this.tableTagSchemaMap = tableTagSchemaMap;
     }
 
     @Override
     public void processElement(String value, Context ctx, Collector<String> out) throws Exception {
-        LOG.debug(">>> [STOP-SIGNAL-CHECKER] CHECKING STOP SIGNAL");
+        LOG.debug(">>> [SIDE-INPUT-FUNC] CHECKING STOP SIGNAL");
 
         if (value.equals("SIGNAL-STOP")) {
-            String msg = "STOP SIGNAL RECEIVED, DDL FOUND, MANUAL INTERVENTION IS NEEDED";
-            LOG.error(">>> [STOP-SIGNAL-CHECKER] {}", msg);
+            String msg = "STOP SIGNAL RECEIVED, MANUAL INTERVENTION IS NEEDED";
+            LOG.error(">>> [SIDE-INPUT-FUNC] {}", msg);
             throw new RuntimeException(msg);
         }
 

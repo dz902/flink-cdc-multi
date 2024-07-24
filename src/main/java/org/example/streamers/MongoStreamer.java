@@ -17,7 +17,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bson.Document;
 import org.example.deserializers.MongoDebeziumToJSONDeserializer;
-import org.example.processfunctions.mongodb.CollectionAssignerProcessFunction;
+import org.example.processfunctions.mongodb.DelayedStopSignalProcessFunction;
+import org.example.processfunctions.mongodb.SideInputProcessFunction;
 import org.example.utils.*;
 
 import java.util.HashMap;
@@ -33,6 +34,7 @@ public class MongoStreamer implements Streamer<String> {
     private final String username;
     private final String password;
     private final String offsetValue;
+    private final boolean snapshotOnly;
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private String mongodbDeserializationMode;
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
@@ -89,6 +91,14 @@ public class MongoStreamer implements Streamer<String> {
         if (StringUtils.isNullOrWhitespaceOnly(this.username)
             || StringUtils.isNullOrWhitespaceOnly(this.password)) {
             LOG.warn(">>> [MONGO-STREAMER] NOT USING AUTHENTICATION");
+        }
+
+        this.snapshotOnly = Boolean.parseBoolean(configJSON.getString("snapshot.only"));
+
+        if (snapshotOnly) {
+            LOG.info(">>> [MONGO-STREAMER] SNAPSHOT ONLY MODE");
+        } else {
+            LOG.info(">>> [MONGO-STREAMER] SNAPSHOT + CDC MODE");
         }
     }
 
@@ -231,9 +241,14 @@ public class MongoStreamer implements Streamer<String> {
     }
 
     public SingleOutputStreamOperator<String> createMainDataStream(DataStream<String> sourceStream) {
+        JSONObject snapshotConfig = new JSONObject();
+        snapshotConfig.put("snapshot.only", snapshotOnly);
+
         return sourceStream
             .keyBy(new NullByteKeySelector<>())
-            .process(new CollectionAssignerProcessFunction(tagSchemaStringMap))
+            .process(new DelayedStopSignalProcessFunction(snapshotConfig))
+            .keyBy(new NullByteKeySelector<>())
+            .process(new SideInputProcessFunction(tagSchemaStringMap))
             .setParallelism(1);
     }
 }

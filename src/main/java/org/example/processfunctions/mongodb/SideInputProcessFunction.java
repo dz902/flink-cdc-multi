@@ -16,16 +16,24 @@ import org.example.utils.Thrower;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class CollectionAssignerProcessFunction extends KeyedProcessFunction<Byte, String, String> {
+public class SideInputProcessFunction extends KeyedProcessFunction<Byte, String, String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
 
-    public CollectionAssignerProcessFunction(Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap) {
+    public SideInputProcessFunction(Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap) {
         this.tagSchemaStringMap = tagSchemaStringMap;
     }
 
     @Override
     public void processElement(String value, Context ctx, Collector<String> out) throws Exception {
+        LOG.debug(">>> [SIDE-INPUT-FUNC] CHECKING STOP SIGNAL");
+
+        if (value.equals("SIGNAL-STOP")) {
+            String msg = "STOP SIGNAL RECEIVED, MANUAL INTERVENTION IS NEEDED";
+            LOG.error(">>> [SIDE-INPUT-FUNC] {}", msg);
+            throw new RuntimeException(msg);
+        }
+
         out.collect(value);
 
         JSONObject valueJSONObject = JSONObject.parseObject(value);
@@ -44,11 +52,11 @@ public class CollectionAssignerProcessFunction extends KeyedProcessFunction<Byte
 
         Tuple2<OutputTag<String>, Schema> tagSchemaTuple = tagSchemaMap.get(sanitizedCollectionName);
         if (tagSchemaTuple != null) {
-            LOG.debug(">>> [COLLECTION-ASSIGNER] SIDE OUTPUT TO: {}", tagSchemaTuple.f0);
+            LOG.debug(">>> [SIDE-INPUT-FUNC] SIDE OUTPUT TO: {}", tagSchemaTuple.f0);
             LOG.trace(filteredValue);
             ctx.output(tagSchemaTuple.f0, filteredValue);
         } else {
-            Thrower.errAndThrow("COLLECTION-ASSIGNER",String.format("UNKNOWN COLLECTION: %s", sanitizedCollectionName));
+            Thrower.errAndThrow("SIDE-INPUT-FUNC",String.format("UNKNOWN COLLECTION: %s", sanitizedCollectionName));
         }
     }
 }

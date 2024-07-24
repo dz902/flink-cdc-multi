@@ -8,6 +8,7 @@
   "source.password": "testtest",
   "source.timezone": "UTC",
   "source.database.name": "test",
+  "snapshot.only": "false",
   "checkpoint.interval": 10,
   "checkpoint.storage": "filesystem",
   "checkpoint.directory": "s3://{bucket}/checkpoints",

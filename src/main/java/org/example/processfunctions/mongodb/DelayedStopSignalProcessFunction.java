@@ -1,4 +1,4 @@
-package org.example.processfunctions.mysql;
+package org.example.processfunctions.mongodb;
 
 import com.alibaba.fastjson.JSONObject;
 import org.apache.flink.api.common.state.ValueState;
@@ -53,15 +53,6 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
         }
 
         out.collect(value);
-
-        String ddlStatement = valueJSONObject.getString("_ddl");
-
-        if (ddlStatement != null) {
-            LOG.info(">>> [STOP-SIGNAL-SENDER] DDL FOUND, SENDING STOP SIGNAL");
-            LOG.info(value);
-
-            setTimer(ctx);
-        }
     }
 
     @Override

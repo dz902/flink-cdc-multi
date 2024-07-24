@@ -15,7 +15,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.example.deserializers.MySQLDebeziumToJSONDeserializer;
 import org.example.processfunctions.mysql.DelayedStopSignalProcessFunction;
-import org.example.processfunctions.mysql.StopSignalCheckerProcessFunction;
+import org.example.processfunctions.mysql.SideInputProcessFunction;
 import org.example.utils.AVROUtils;
 import org.example.utils.Sanitizer;
 import org.example.utils.Thrower;
@@ -37,6 +37,8 @@ public class MySQLStreamer implements Streamer<String> {
     private final JSONObject tableNameMap;
     private String offsetFile;
     private int offsetPos;
+    private boolean snapshotOnly; // TODO: SNAPSHOT ONLY MODE
+    private JSONObject snapshotConditions; // TODO: FOR REFILL DATA FROM A PERIOD
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
 
     public MySQLStreamer(JSONObject configJSON) {
@@ -61,6 +63,14 @@ public class MySQLStreamer implements Streamer<String> {
             this.offsetFile = offsetSplits[0];
             this.offsetPos = Integer.parseInt(offsetSplits[1]);
         }
+
+        this.snapshotOnly = Boolean.parseBoolean(configJSON.getString("snapshot.only"));
+
+        if (snapshotOnly) {
+            LOG.info(">>> [MYSQL-STREAMER] SNAPSHOT ONLY MODE");
+        } else {
+            LOG.info(">>> [MYSQL-STREAMER] SNAPSHOT + CDC MODE");
+        }
     }
 
     @Override
@@ -68,7 +78,7 @@ public class MySQLStreamer implements Streamer<String> {
         StartupOptions startupOptions;
 
         if (StringUtils.isNullOrWhitespaceOnly(offsetFile) || offsetPos < 0) {
-            LOG.info(">>> [MYSQL-STREAMER] NO VALID OFFSET, SNAPSHOT + CDC");
+            LOG.info(">>> [MYSQL-STREAMER] NO VALID OFFSET");
             startupOptions = StartupOptions.initial();
         } else {
             startupOptions = StartupOptions.specificOffset(offsetFile, offsetPos);
@@ -202,12 +212,15 @@ public class MySQLStreamer implements Streamer<String> {
 
     @Override
     public SingleOutputStreamOperator<String> createMainDataStream(DataStream<String> sourceStream) {
+        JSONObject snapshotConfig = new JSONObject();
+        snapshotConfig.put("snapshot.only", snapshotOnly);
+
         return sourceStream
             .keyBy(new NullByteKeySelector<>())
-            .process(new DelayedStopSignalProcessFunction())
+            .process(new DelayedStopSignalProcessFunction(snapshotConfig))
             .setParallelism(1)
             .keyBy(new NullByteKeySelector<>())
-            .process(new StopSignalCheckerProcessFunction(tagSchemaMap))
+            .process(new SideInputProcessFunction(tagSchemaMap))
             .setParallelism(1);
     }
 }
