@@ -14,4 +14,8 @@ public class Validator {
 
         return str;
     }
+
+    public static <T> T withDefault(T thing, T defaultValue) {
+        return thing == null ? defaultValue : thing;
+    }
 }

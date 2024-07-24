@@ -5,15 +5,18 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.ververica.cdc.debezium.DebeziumDeserializationSchema;
 import io.debezium.data.Envelope;
+import org.apache.avro.Schema;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
+import org.apache.flink.util.OutputTag;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.example.utils.Thrower;
+import org.example.utils.Sanitizer;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -21,6 +24,11 @@ import java.util.Map;
 
 public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
+    private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
+
+    public MySQLDebeziumToJSONDeserializer(Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap) {
+        this.tagSchemaMap = tagSchemaMap;
+    }
 
     @Override
     public void deserialize(SourceRecord sourceRecord, Collector<String> collector) throws Exception {
@@ -89,54 +97,51 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
         String sanitizedDatabaseName = databaseName.replace('-', '_');
         String sanitizedTableName = tableName.replace('-', '_');
 
-        Struct after = value.getStruct("after");
-
         String op = Envelope.operationFor(sourceRecord).toString();
+        Struct record;
+
+        if (op.equals("DELETE")) {
+            record = value.getStruct("before");
+        } else {
+            record = value.getStruct("after");
+        }
+
         JSONObject recordObject = new JSONObject();
 
-        if (!op.equals("DELETE")) {
-            if (after == null) {
-                Thrower.errAndThrow(
-                    "DESERIALIZER",
-                    String.format("AFTER FIELD IS EMPTY FOR NON-DELETE EVENT: %s", op)
-                );
-                return;
-            }
+        for (Field field : record.schema().fields()) {
+            Object o = record.get(field);
 
-            for (Field field : after.schema().fields()) {
-                Object o = after.get(field);
-
-                JSONObject valueObject = null;
-                if (o != null) {
-                    String type;
-                    switch (o.getClass().getSimpleName()) {
-                        case "Integer":
-                        case "Short":
-                            type = "int";
-                            break;
-                        case "Long":
-                            type = "long";
-                            break;
-                        case "Float":
-                            type = "float";
-                            break;
-                        case "Double":
-                            type = "double";
-                            break;
-                        case "Boolean":
-                            type = "boolean";
-                            break;
-                        default:
-                            type = "string";
-                            break;
-                    }
-
-                    valueObject = new JSONObject();
-                    valueObject.put(type, o);
+            JSONObject valueObject = null;
+            if (o != null) {
+                String type;
+                switch (o.getClass().getSimpleName()) {
+                    case "Integer":
+                    case "Short":
+                        type = "int";
+                        break;
+                    case "Long":
+                        type = "long";
+                        break;
+                    case "Float":
+                        type = "float";
+                        break;
+                    case "Double":
+                        type = "double";
+                        break;
+                    case "Boolean":
+                        type = "boolean";
+                        break;
+                    default:
+                        type = "string";
+                        break;
                 }
 
-                recordObject.put(field.name().replace('-', '_'), valueObject);
+                valueObject = new JSONObject();
+                valueObject.put(type, o);
             }
+
+            String sanitizedFieldName = Sanitizer.sanitize(field.name());
+            recordObject.put(sanitizedFieldName, valueObject);
         }
 
         // DATA

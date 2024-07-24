@@ -14,7 +14,7 @@ import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.example.utils.AvroUtils;
+import org.example.utils.AVROUtils;
 import org.example.utils.JSONUtils;
 import org.example.utils.Sanitizer;
 import org.example.utils.Thrower;
@@ -30,7 +30,7 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
     * doc-string = there is only one field "doc", the whole document is converted into a JSON string
     * */
     private String mode = "top-level-string";
-    private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
+    private final Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
 
     public MongoDebeziumToJSONDeserializer(String mode, Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap) {
         this.mode = mode;
@@ -91,9 +91,9 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
             } else {
                 if (v != null) {
                     if (v.getClass() == JSONObject.class) {
-                        valueObject.put(AvroUtils.getAvroSchemaFrom(v.getClass()).getName(), JSON.toJSONString(v));
+                        valueObject.put(AVROUtils.getAvroSchemaFrom(v.getClass()).getName(), JSON.toJSONString(v));
                     } else {
-                        valueObject.put(AvroUtils.getAvroSchemaFrom(v.getClass()).getName(), v);
+                        valueObject.put(AVROUtils.getAvroSchemaFrom(v.getClass()).getName(), v);
                     }
 
                     sanitizedRecordObject.put(sanitizedFieldName, valueObject);
@@ -127,7 +127,7 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
         sanitizedRecordObject.put("_ts", value.getInt64("ts_ms"));
 
         if ("top-level-string".equals(mode)) {
-            Schema schema = tagSchemaMap.get(sanitizedDatabaseName).f1;
+            Schema schema = tagSchemaMap.get(sanitizedCollectionName).f1;
 
             for (Schema.Field field : schema.getFields()) {
                 String sanitizedFieldName = Sanitizer.sanitize(field.name());

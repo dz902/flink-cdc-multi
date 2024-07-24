@@ -1,0 +1,18 @@
+{
+  "sink.path": "/tmp/test",
+  "source.type": "mongo",
+  "source.id": "mongo_source",
+  "source.hosts": "localhost:27017",
+  "source.username": "",
+  "source.password": "",
+  "source.database.name": "my-db",
+  "source.collection.name": "my-db.my_coll",
+  "mongodb.deserialization.mode": "top-level-string",
+  "checkpoint.interval": 10,
+  "checkpoint.storage": "filesystem",
+  "checkpoint.directory": "s3://{bucket}/checkpoints",
+  "offset.store.path": "s3://{bucket}/offsets",
+  "table.name.map": {
+    "dummy": "dummy_v20240713"
+  }
+}

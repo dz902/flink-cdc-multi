@@ -6,7 +6,10 @@ import com.ververica.cdc.connectors.base.options.StartupOptions;
 import com.ververica.cdc.connectors.mongodb.source.MongoDBSource;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder.FieldAssembler;
+import org.apache.flink.api.java.functions.NullByteKeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
 import org.apache.hadoop.util.VersionUtil;
@@ -14,12 +17,14 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bson.Document;
 import org.example.deserializers.MongoDebeziumToJSONDeserializer;
+import org.example.processfunctions.mongodb.CollectionAssignerProcessFunction;
 import org.example.utils.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-public class MongoStreamer implements Streamer {
+public class MongoStreamer implements Streamer<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final String hosts;
     private final String databaseName;
@@ -30,6 +35,7 @@ public class MongoStreamer implements Streamer {
     private final String offsetValue;
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private String mongodbDeserializationMode;
+    private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
 
     public MongoStreamer(JSONObject configJSON) {
         // TODO: SUPPORT DB LEVEL CDC FOR MONGODB v4+
@@ -198,10 +204,10 @@ public class MongoStreamer implements Streamer {
                 }
             }
 
-            FieldAssembler<Schema> fieldAssembler = AvroUtils.createFieldAssemblerWithFieldTypes(fieldTypes);
+            FieldAssembler<Schema> fieldAssembler = AVROUtils.createFieldAssemblerWithFieldTypes(fieldTypes);
 
-            AvroUtils.addFieldToFieldAssembler(fieldAssembler, "_op", String.class, false);
-            AvroUtils.addFieldToFieldAssembler(fieldAssembler, "_ts", Long.class, false);
+            AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_op", String.class, false);
+            AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_ts", Long.class, false);
 
             final Schema avroSchema = fieldAssembler.endRecord();
 
@@ -215,7 +221,19 @@ public class MongoStreamer implements Streamer {
         }
 
         this.tagSchemaMap = tagSchemaMap;
+        this.tagSchemaStringMap = tagSchemaMap.entrySet().stream()
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
+            ));
 
         return tagSchemaMap;
+    }
+
+    public SingleOutputStreamOperator<String> createMainDataStream(DataStream<String> sourceStream) {
+        return sourceStream
+            .keyBy(new NullByteKeySelector<>())
+            .process(new CollectionAssignerProcessFunction(tagSchemaStringMap))
+            .setParallelism(1);
     }
 }

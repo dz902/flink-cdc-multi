@@ -1,8 +1,6 @@
 package org.example;
 
 import com.alibaba.fastjson.JSONObject;
-import com.ververica.cdc.connectors.base.source.assigner.state.PendingSplitsState;
-import com.ververica.cdc.connectors.base.source.meta.split.SourceSplitBase;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
@@ -39,12 +37,11 @@ import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.example.bucketassigners.DatabaseTableDateBucketAssigner;
-import org.example.processfunctions.mongodb.CollectionAssignerProcessFunction;
 import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
-import org.example.processfunctions.mysql.DelayedStopSignalProcessFunction;
 import org.example.richmapfunctions.JSONToGenericRecordMapFunction;
 import org.example.sinkfunctions.SingleFileSinkFunction;
 import org.example.streamers.MongoStreamer;
+import org.example.streamers.MySQLStreamer;
 import org.example.streamers.Streamer;
 import org.example.utils.Thrower;
 import org.example.utils.Validator;
@@ -56,7 +53,6 @@ import java.io.InputStreamReader;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 public class FlinkCDCMulti {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -71,7 +67,7 @@ public class FlinkCDCMulti {
     private static String offsetValue;
     private static String offsetStorePath;
     private static String offsetStoreFilePath;
-    private static Streamer streamer;
+    private static Streamer<String> streamer;
     private static DataStream<String> sourceStream;
     private static StreamExecutionEnvironment env;
     private static Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
@@ -112,7 +108,7 @@ public class FlinkCDCMulti {
     }
 
     private static void createSourceStream() {
-        Source<String, SourceSplitBase, PendingSplitsState> source = streamer.getSource();
+        Source<String, ?, ?> source = streamer.getSource();
         sourceStream = env
             .fromSource(
                 source,
@@ -152,28 +148,28 @@ public class FlinkCDCMulti {
         offsetStoreFilePath = configJSON.getString("offset.store.file.path");
 
         if (StringUtils.isNullOrWhitespaceOnly(offsetStoreFilePath)) {
-            offsetStorePath = configJSON.getString("offset.store.path");
-            offsetStoreFilePath = String.format("%s/%s_offset.txt", offsetStorePath, sourceId);
+            if (StringUtils.isNullOrWhitespaceOnly(offsetStorePath)) {
+                LOG.info(">>> [MAIN] NO OFFSET STORE PATH SET, FEATURE DISABLED");
+                return;
+            } else {
+                offsetStoreFilePath = String.format("%s/%s_offset.txt", offsetStorePath, sourceId);
+            }
         }
 
-        if (StringUtils.isNullOrWhitespaceOnly(offsetStoreFilePath)) {
-            LOG.info(">>> [MAIN] NO OFFSET STORE PATH SET, FEATURE DISABLED");
-        } else {
-            LOG.info(">>> [MAIN] OFFSET STORE PATH: {}", offsetStoreFilePath);
-        }
-
+        LOG.info(">>> [MAIN] OFFSET STORE PATH: {}", offsetStoreFilePath);
         LOG.info(">>> [MAIN] LOADING OFFSET FROM PATH: {}", offsetStoreFilePath);
 
         Path storeFilePath = new Path(offsetStoreFilePath);
 
-        FileSystem storeFS = null;
+        FileSystem storeFS;
         try {
             storeFS = storeFilePath.getFileSystem();
         } catch (IOException e) {
             Thrower.errAndThrow(
                 "MAIN",
-                String.format("INVALID BINLOG OFFSET STORE PATH: %s", offsetStoreFilePath)
+                String.format("INVALID OFFSET STORE PATH: %s", offsetStoreFilePath)
             );
+            return;
         }
 
         String offsetValueFromStore = "";
@@ -216,6 +212,9 @@ public class FlinkCDCMulti {
             case "mongo":
                 streamer = new MongoStreamer(configJSON);
                 break;
+            case "mysql":
+                streamer = new MySQLStreamer(configJSON);
+                break;
             default:
                 String msg = String.format("UNSUPPORTED SOURCE TYPE: %s", sourceType);
                 LOG.error(">>> [MAIN] {}", msg);
@@ -239,19 +238,7 @@ public class FlinkCDCMulti {
     }
 
     private static void createSideStreams() {
-        Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap = tagSchemaMap.entrySet().stream()
-            .collect(Collectors.toMap(
-                Map.Entry::getKey,
-                entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
-            ));
-
-        SingleOutputStreamOperator<String> mainDataStream = sourceStream
-            .keyBy(new NullByteKeySelector<>())
-            .process(new DelayedStopSignalProcessFunction())
-            .setParallelism(1)
-            .keyBy(new NullByteKeySelector<>())
-            .process(new CollectionAssignerProcessFunction(tagSchemaStringMap))
-            .setParallelism(1);
+        SingleOutputStreamOperator<String> mainDataStream = streamer.createMainDataStream(sourceStream);
 
         for (Map.Entry<String, Tuple2<OutputTag<String>, Schema>> entry : tagSchemaMap.entrySet()) {
             OutputTag<String> outputTag = entry.getValue().f0;
