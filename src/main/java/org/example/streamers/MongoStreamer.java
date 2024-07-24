@@ -28,12 +28,8 @@ public class MongoStreamer implements Streamer {
     private final String username;
     private final String password;
     private final String offsetValue;
-    // TODO: TS OFFSET IS NOT SUPPORTED BY v3.6 AND IS SILENTLY IGNORED BY FLINK-CDC
-    // ALSO FLINK-CDC DOES NOT DIRECTLY ACCEPT RESUME TOKEN SO MIGHT HAVE
-    // TO USE SAVEPOINT BECAUSE RESUME TOKEN IS SAVED AND USED FOR RESUMING INTERNALLY
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private String mongodbDeserializationMode;
-    private boolean compatibilityMode = false;
 
     public MongoStreamer(JSONObject configJSON) {
         // TODO: SUPPORT DB LEVEL CDC FOR MONGODB v4+
@@ -130,9 +126,17 @@ public class MongoStreamer implements Streamer {
             LOG.info(">>> [MONGO-STREAMER] MONGODB VERSION: {}", version);
 
             if (VersionUtil.compareVersions(version, "4.0.0") < 0) {
-                LOG.warn(">>> [MONGO-STREAMER] MONGODB VERSION < 4.0, USING COMPATIBILITY MODE");
-                LOG.warn(">>> [MONGO-STREAMER] TIMESTAMP DOES NOT WORK, USE SAVEPOINTS INSTEAD");
-                compatibilityMode = true;
+                /*
+                * NOTE:
+                * Even though we can change the source code to use `resumeAfter` token, it
+                * cannot be used for source splitting because splitting is timestamp
+                * based. This is too much work and diverges future version updates. This is
+                * purely required for working with MongoDB v3.6 which dates back many years.
+                * So the decision is to drop this support.
+                * */
+                LOG.warn(">>> [MONGO-STREAMER] MONGODB VERSION < 4.0, EITHER SNAPSHOT OR CDC FROM LATEST OFFSET");
+                LOG.warn(">>> [MONGO-STREAMER] TIMESTAMP OFFSET IS SILENTLY IGNORED");
+                LOG.warn(">>> [MONGO-STREAMER] CAN ONLY HAVE CURRENCY = 1 AS TIMESTAMP SPLITTING WILL NOT WORK");
             }
 
             final String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
