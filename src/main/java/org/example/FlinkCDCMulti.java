@@ -11,6 +11,7 @@ import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.connector.source.Source;
 import org.apache.flink.api.java.functions.NullByteKeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
@@ -37,6 +38,7 @@ import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.example.bucketassigners.DateBucketAssigner;
+import org.example.processfunctions.common.StatusStoreProcessFunction;
 import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
 import org.example.richmapfunctions.JSONToGenericRecordMapFunction;
 import org.example.sinkfunctions.SingleFileSinkFunction;
@@ -51,6 +53,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -59,6 +62,7 @@ public class FlinkCDCMulti {
     private static final Configuration flinkConfig = GlobalConfiguration.loadConfiguration();
     private static final Options options = new Options();
     private static String argConfig;
+    private static String argName;
     private static Boolean argDebugMode = false;
     private static JSONObject configJSON = new JSONObject();
     private static String sourceType;
@@ -77,7 +81,7 @@ public class FlinkCDCMulti {
         createFlinkStreamingEnv();
 
         initializeFileSystem();
-        processCLIOptions(args);
+        processCLIArgs(args);
 
         enableDebugMode(argDebugMode);
         loadConfigJSON(argConfig);
@@ -91,6 +95,7 @@ public class FlinkCDCMulti {
         createSourceStream();
         createSideStreams();
         createOffsetStoreStream();
+        createStatusStoreStream();
 
         addDefaultPrintSink();
         setFlinkRestartStrategy();
@@ -131,8 +136,31 @@ public class FlinkCDCMulti {
     }
 
     private static void startFlinkJob() throws Exception {
-        jobExecutionResult = env.execute("JOB-" + sourceType);
+        String jobName = null;
 
+        if (StringUtils.isNullOrWhitespaceOnly(argName)) {
+            jobName = argName;
+            LOG.info(">>> [MAIN] JOB NAME FROM CLI ARGS: {}", jobName);
+        }
+
+        String configJobName = configJSON.getString("job.name");
+        if (StringUtils.isNullOrWhitespaceOnly(configJobName)) {
+            jobName = configJobName;
+            LOG.info(">>> [MAIN] JOB NAME FROM CONFIG FILE: {}", jobName);
+        }
+
+        if (StringUtils.isNullOrWhitespaceOnly(jobName)) {
+            jobName = "JOB-" + sourceId;
+            LOG.info(">>> [MAIN] JOB NAME NOT, USING DEFAULT: {}", jobName);
+        }
+
+        final Map<String, String> paramsMap = new HashMap<>();
+        paramsMap.put("jobName", jobName);
+
+        final ParameterTool params = ParameterTool.fromMap(paramsMap);
+        env.getConfig().setGlobalJobParameters(params);
+
+        jobExecutionResult = env.execute(jobName);
     }
 
     private static void configureOffset() throws IOException {
@@ -148,6 +176,8 @@ public class FlinkCDCMulti {
         offsetStoreFilePath = configJSON.getString("offset.store.file.path");
 
         if (StringUtils.isNullOrWhitespaceOnly(offsetStoreFilePath)) {
+            offsetStorePath = configJSON.getString("offset.store.path");
+
             if (StringUtils.isNullOrWhitespaceOnly(offsetStorePath)) {
                 LOG.info(">>> [MAIN] NO OFFSET STORE PATH SET, FEATURE DISABLED");
                 return;
@@ -223,17 +253,35 @@ public class FlinkCDCMulti {
     }
 
     private static void createOffsetStoreStream() {
-        if (StringUtils.isNullOrWhitespaceOnly(offsetStorePath)) {
+        if (StringUtils.isNullOrWhitespaceOnly(offsetStoreFilePath)) {
             return;
         }
 
-        LOG.info(">>> [MAIN] CREATING OFFSET STREAM");
+        LOG.info(">>> [MAIN] CREATING OFFSET STREAM: {}", offsetStoreFilePath);
 
         sourceStream
             .keyBy(new NullByteKeySelector<>())
             .process(new TimestampOffsetStoreProcessFunction())
             .setParallelism(1)
             .addSink(new SingleFileSinkFunction(new Path(offsetStoreFilePath)))
+            .setParallelism(1);
+    }
+
+    private static void createStatusStoreStream() {
+        String statusStorePath = configJSON.getString("status.store.path");
+
+        if (StringUtils.isNullOrWhitespaceOnly(statusStorePath)) {
+            LOG.info(">>> [MAIN] STATUS STORE PATH NOT SET, FEATURE DISABLED");
+            return;
+        }
+
+        LOG.info(">>> [MAIN] CREATING STATUS STORE STREAM: {}", statusStorePath);
+
+        sourceStream
+            .keyBy(new NullByteKeySelector<>())
+            .process(new StatusStoreProcessFunction())
+            .setParallelism(1)
+            .print()
             .setParallelism(1);
     }
 
@@ -275,12 +323,13 @@ public class FlinkCDCMulti {
         }
     }
 
-    private static void processCLIOptions(String[] args) throws IOException, ParseException {
+    private static void processCLIArgs(String[] args) throws IOException, ParseException {
         LOG.info(">>> [MAIN] ARGS: {}", Arrays.toString(args));
 
         Options options = new Options();
-        options.addOption("c", "config", true, "config json");
-        options.addOption(null, "debug", false, "Enable debug logging.");
+        options.addOption("c", "config", true, "Path to config JSON file");
+        options.addOption("n", "name", true, "Job name");
+        options.addOption(null, "debug", false, "Enable debug logging");
 
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd;
@@ -295,6 +344,7 @@ public class FlinkCDCMulti {
 
         argDebugMode = cmd.hasOption("debug");
         argConfig = cmd.getOptionValue("c");
+        argName = cmd.getOptionValue("n");
     }
 
     private static void configureCheckpointing() {

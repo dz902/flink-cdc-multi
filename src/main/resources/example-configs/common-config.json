@@ -1,0 +1,14 @@
+{
+  "job.name": "my_job",
+  "sink.path": "/tmp/test",
+  "source.id": "mongo_source",
+  "source.username": "",
+  "source.password": "",
+  "source.database.name": "my-db",
+  "snapshot.only": "false",
+  "checkpoint.interval": 10,
+  "checkpoint.storage": "filesystem",
+  "checkpoint.directory": "s3://{bucket}/checkpoints",
+  "offset.store.path": "s3://{bucket}/offsets",
+  "status.store.path": "s3://{bucket}/status"
+}
