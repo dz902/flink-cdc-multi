@@ -42,7 +42,7 @@ import org.example.processfunctions.common.StatusStoreProcessFunction;
 import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
 import org.example.richmapfunctions.JSONToGenericRecordMapFunction;
 import org.example.sinkfunctions.SingleFileSinkFunction;
-import org.example.streamers.MongoStreamer;
+import org.example.streamers.MongoDBStreamer;
 import org.example.streamers.MySQLStreamer;
 import org.example.streamers.Streamer;
 import org.example.utils.Thrower;
@@ -240,7 +240,7 @@ public class FlinkCDCMulti {
 
         switch (sourceType) {
             case "mongo":
-                streamer = new MongoStreamer(configJSON);
+                streamer = new MongoDBStreamer(configJSON);
                 break;
             case "mysql":
                 streamer = new MySQLStreamer(configJSON);

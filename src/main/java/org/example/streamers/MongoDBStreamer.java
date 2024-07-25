@@ -25,7 +25,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class MongoStreamer implements Streamer<String> {
+public class MongoDBStreamer implements Streamer<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final String hosts;
     private final String databaseName;
@@ -39,10 +39,10 @@ public class MongoStreamer implements Streamer<String> {
     private String mongodbDeserializationMode;
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
 
-    public MongoStreamer(JSONObject configJSON) {
+    public MongoDBStreamer(JSONObject configJSON) {
         // TODO: SUPPORT DB LEVEL CDC FOR MONGODB v4+
-        LOG.warn(">>> [MONGO-STREAMER] CURRENTLY ONLY SINGLE DB AND COLLECTION IS SUPPORTED");
-        LOG.warn(">>> [MONGO-STREAMER] BECAUSE THIS TOOL IS DEVELOPED AGAINST MONGO V3.6");
+        LOG.warn(">>> [MONGODB-STREAMER] CURRENTLY ONLY SINGLE DB AND COLLECTION IS SUPPORTED");
+        LOG.warn(">>> [MONGODB-STREAMER] BECAUSE THIS TOOL IS DEVELOPED AGAINST MONGO V3.6");
 
         this.hosts = Validator.ensureNotEmpty("source.hosts", configJSON.getString("source.hosts"));
         this.databaseName = Validator.ensureNotEmpty("source.database.name", configJSON.getString("source.database.name"));
@@ -52,22 +52,28 @@ public class MongoStreamer implements Streamer<String> {
         this.offsetValue = configJSON.getString("offset.value");
         this.mongodbDeserializationMode = configJSON.getString("mongodb.deserialization.mode");
 
+        if (StringUtils.isNullOrWhitespaceOnly(this.username) || StringUtils.isNullOrWhitespaceOnly(this.password)) {
+            LOG.warn(">>> [MONGODB-STREAMER] NOT USING AUTHENTICATION");
+        } else {
+            LOG.info(">>> [MONGODB-STREAMER] USING AUTHENTICATION");
+        }
+
         if (this.databaseName.matches("(?i)^(?:admin|config|local)$")) {
             Thrower.errAndThrow(
-                "MONGO-STREAMER",
+                "MONGODB-STREAMER",
                 String.format("FLINK CDC CANNOT STREAM FROM SYSTEM DB: %s", this.databaseName)
             );
         }
 
         if (!this.collectionFullName.contains(".")) {
             Thrower.errAndThrow(
-                "MONGO-STREAMER",
+                "MONGODB-STREAMER",
                 String.format("COLLECTION NAME MUST BE PREFIXED WITH DB (DB.COLLECTION): %s", this.collectionFullName)
             );
         }
 
         if (StringUtils.isNullOrWhitespaceOnly(mongodbDeserializationMode)) {
-            LOG.warn(">>> [MONGO-STREAMER] MONGODB DESERIALIZATION MODE NOT SET, DEFAULT TO: top-level-type");
+            LOG.warn(">>> [MONGODB-STREAMER] MONGODB DESERIALIZATION MODE NOT SET, DEFAULT TO: top-level-type");
             mongodbDeserializationMode = "top-level-type";
         } else {
             switch (mongodbDeserializationMode) {
@@ -77,12 +83,12 @@ public class MongoStreamer implements Streamer<String> {
                     break;
                 default:
                     Thrower.errAndThrow(
-                        "MONGO-STREAMER",
+                        "MONGODB-STREAMER",
                         String.format("UNKNOWN MONGODB DESERIALIZATION MODE: %s", mongodbDeserializationMode)
                     );
             }
 
-            LOG.info(">>> [MONGO-STREAMER] MONGODB DESERIALIZATION MODE: {}", mongodbDeserializationMode);
+            LOG.info(">>> [MONGODB-STREAMER] MONGODB DESERIALIZATION MODE: {}", mongodbDeserializationMode);
         }
 
 
@@ -90,15 +96,15 @@ public class MongoStreamer implements Streamer<String> {
 
         if (StringUtils.isNullOrWhitespaceOnly(this.username)
             || StringUtils.isNullOrWhitespaceOnly(this.password)) {
-            LOG.warn(">>> [MONGO-STREAMER] NOT USING AUTHENTICATION");
+            LOG.warn(">>> [MONGODB-STREAMER] NOT USING AUTHENTICATION");
         }
 
         this.snapshotOnly = Boolean.parseBoolean(configJSON.getString("snapshot.only"));
 
         if (snapshotOnly) {
-            LOG.info(">>> [MONGO-STREAMER] SNAPSHOT ONLY MODE");
+            LOG.info(">>> [MONGODB-STREAMER] SNAPSHOT ONLY MODE");
         } else {
-            LOG.info(">>> [MONGO-STREAMER] SNAPSHOT + CDC MODE");
+            LOG.info(">>> [MONGODB-STREAMER] SNAPSHOT + CDC MODE");
         }
     }
 
@@ -109,7 +115,7 @@ public class MongoStreamer implements Streamer<String> {
             startupOptions = StartupOptions.initial();
         } else {
             if (!offsetValue.matches("^[1-9][0-9]*$")) {
-                Thrower.errAndThrow("MONGO-STREAMER", String.format("OFFSET NOT IN TIMESTAMP MILLISECONDS FORMAT: %s", offsetValue));
+                Thrower.errAndThrow("MONGODB-STREAMER", String.format("OFFSET NOT IN TIMESTAMP MILLISECONDS FORMAT: %s", offsetValue));
             }
 
             startupOptions = StartupOptions.timestamp(Long.parseLong(offsetValue));
@@ -128,7 +134,7 @@ public class MongoStreamer implements Streamer<String> {
     }
 
     public Map<String, Tuple2<OutputTag<String>, Schema>> createTagSchemaMap() {
-        LOG.info(">>> [MONGO-STREAMER] CREATING TAG SCHEMA MAP");
+        LOG.info(">>> [MONGODB-STREAMER] CREATING TAG SCHEMA MAP");
 
         // DB.TABLE -> (OUTPUT-TAG, SCHEMA)
         Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap = new HashMap<>();
@@ -139,7 +145,7 @@ public class MongoStreamer implements Streamer<String> {
             Document buildInfo = db.runCommand(new Document("buildInfo", 1));
             String version = buildInfo.getString("version");
 
-            LOG.info(">>> [MONGO-STREAMER] MONGODB VERSION: {}", version);
+            LOG.info(">>> [MONGODB-STREAMER] MONGODB VERSION: {}", version);
 
             if (VersionUtil.compareVersions(version, "4.0.0") < 0) {
                 /*
@@ -150,16 +156,16 @@ public class MongoStreamer implements Streamer<String> {
                 * purely required for working with MongoDB v3.6 which dates back many years.
                 * So the decision is to drop this support.
                 * */
-                LOG.warn(">>> [MONGO-STREAMER] MONGODB VERSION < 4.0, EITHER SNAPSHOT OR CDC FROM LATEST OFFSET");
-                LOG.warn(">>> [MONGO-STREAMER] TIMESTAMP OFFSET IS SILENTLY IGNORED");
-                LOG.warn(">>> [MONGO-STREAMER] CAN ONLY HAVE CURRENCY = 1 AS TIMESTAMP SPLITTING WILL NOT WORK");
+                LOG.warn(">>> [MONGODB-STREAMER] MONGODB VERSION < 4.0, EITHER SNAPSHOT OR CDC FROM LATEST OFFSET");
+                LOG.warn(">>> [MONGODB-STREAMER] TIMESTAMP OFFSET IS SILENTLY IGNORED");
+                LOG.warn(">>> [MONGODB-STREAMER] CAN ONLY HAVE CURRENCY = 1 AS TIMESTAMP SPLITTING WILL NOT WORK");
             }
 
             final String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
             final String sanitizedCollectionName = Sanitizer.sanitize(collectionName);
 
             LOG.info(
-                ">>> [MONGO-STREAMER] FETCHING SCHEMA FOR {}.{}",
+                ">>> [MONGODB-STREAMER] FETCHING SCHEMA FOR {}.{}",
                 sanitizedDatabaseName, sanitizedCollectionName
             );
 
@@ -189,8 +195,8 @@ public class MongoStreamer implements Streamer<String> {
                                 if (fieldTypes.containsKey(fieldName)) {
                                     if (fieldTypes.get(fieldName) != value.getClass()) {
                                         LOG.error(">>> [MONGO-STEAMER] FIELD TYPE CONFLICT: {} ({} <-> {})", fieldName, fieldTypes.get(fieldName), value.getClass());
-                                        Thrower.errAndThrow("MONGO-STREAMER",
-                                            ">>> [MONGO-STREAMER] CONFLICTING SCHEMA FOUND IN DOC SAMPLES, MUST CHANGE MODE TO: top-level-string"
+                                        Thrower.errAndThrow("MONGODB-STREAMER",
+                                            ">>> [MONGODB-STREAMER] CONFLICTING SCHEMA FOUND IN DOC SAMPLES, MUST CHANGE MODE TO: top-level-string"
                                         );
                                     }
                                 } else {
@@ -205,12 +211,12 @@ public class MongoStreamer implements Streamer<String> {
                     }
                 }
 
-                LOG.info(">>> [MONGO-STREAMER] FETCHED {} SAMPLES", count);
+                LOG.info(">>> [MONGODB-STREAMER] FETCHED {} SAMPLES", count);
 
                 if (count < 1) {
-                    Thrower.errAndThrow("MONGO-STREAMER", "CANNOT INFER SCHEMA FROM EMPTY COLLECTION");
+                    Thrower.errAndThrow("MONGODB-STREAMER", "CANNOT INFER SCHEMA FROM EMPTY COLLECTION");
                 } else if (count < 50) {
-                    LOG.warn(">>> [MONGO-STREAMER] USING ONLY {} SAMPLES TO INFER SCHEMA, MAY NOT BE ACCURATE", count);
+                    LOG.warn(">>> [MONGODB-STREAMER] USING ONLY {} SAMPLES TO INFER SCHEMA, MAY NOT BE ACCURATE", count);
                 }
             }
 
@@ -227,7 +233,7 @@ public class MongoStreamer implements Streamer<String> {
 
             tagSchemaMap.put(sanitizedCollectionName, Tuple2.of(outputTag, avroSchema));
 
-            LOG.debug(">>> [MONGO-STREAMER] AVRO SCHEMA INFERRED FROM 100 SAMPLES");
+            LOG.debug(">>> [MONGODB-STREAMER] AVRO SCHEMA INFERRED FROM 100 SAMPLES");
             LOG.debug(avroSchema.toString(true));
         }
 
