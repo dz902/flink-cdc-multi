@@ -3,12 +3,12 @@ package org.example.streamers;
 import com.alibaba.fastjson.JSONObject;
 import com.mongodb.client.*;
 import com.ververica.cdc.connectors.base.options.StartupOptions;
+import org.apache.flink.streaming.api.datastream.DataStream;
 import com.ververica.cdc.connectors.mongodb.source.MongoDBSource;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder.FieldAssembler;
 import org.apache.flink.api.java.functions.NullByteKeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
@@ -35,10 +35,12 @@ public class MongoDBStreamer implements Streamer<String> {
     private final String password;
     private final String offsetValue;
     private final boolean snapshotOnly;
+    private String startupMode;
     private String mongoDBAuthDatabase;
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private String mongoDBDeserializationMode;
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
+    private boolean compatibilityMode = false;
 
     public MongoDBStreamer(JSONObject configJSON) {
         // TODO: SUPPORT DB LEVEL CDC FOR MONGODB v4+
@@ -92,7 +94,6 @@ public class MongoDBStreamer implements Streamer<String> {
             LOG.info(">>> [MONGODB-STREAMER] MONGODB DESERIALIZATION MODE: {}", mongoDBDeserializationMode);
         }
 
-
         this.collectionName = this.collectionFullName.split("\\.")[1];
 
         if (StringUtils.isNullOrWhitespaceOnly(this.username)
@@ -100,26 +101,64 @@ public class MongoDBStreamer implements Streamer<String> {
             LOG.warn(">>> [MONGODB-STREAMER] NOT USING AUTHENTICATION");
         }
 
+        this.startupMode = configJSON.getString("startup.mode");
+
+        switch (startupMode) {
+            case "initial":
+            case "earliest":
+            case "latest":
+            case "offset":
+                break;
+            default:
+                startupMode = "initial";
+        }
+
         this.snapshotOnly = Boolean.parseBoolean(configJSON.getString("snapshot.only"));
 
         if (snapshotOnly) {
-            LOG.info(">>> [MONGODB-STREAMER] SNAPSHOT ONLY MODE");
-        } else {
-            LOG.info(">>> [MONGODB-STREAMER] SNAPSHOT + CDC MODE");
+            LOG.info(">>> [MONGODB-STREAMER] SNAPSHOT ONLY MODE, STARTUP MODE CHANGED: {} -> initial", startupMode);
         }
     }
 
     public MongoDBSource<String> getSource() {
         StartupOptions startupOptions;
 
-        if (StringUtils.isNullOrWhitespaceOnly(offsetValue)) {
-            startupOptions = StartupOptions.initial();
-        } else {
-            if (!offsetValue.matches("^[1-9][0-9]*$")) {
-                Thrower.errAndThrow("MONGODB-STREAMER", String.format("OFFSET NOT IN TIMESTAMP MILLISECONDS FORMAT: %s", offsetValue));
-            }
+        LOG.info(">>> [MONGO-STREAMER] STARTUP MODE: {}", startupMode);
 
-            startupOptions = StartupOptions.timestamp(Long.parseLong(offsetValue));
+        switch (startupMode) {
+            case "earliest":
+                startupOptions = StartupOptions.earliest();
+                break;
+            case "latest":
+                startupOptions = StartupOptions.latest();
+                break;
+            case "offset":
+                if (StringUtils.isNullOrWhitespaceOnly(offsetValue)) {
+                    LOG.info(">>> [MONGODB-STREAMER] NO OFFSET PROVIDED, STARTUP MODE CHANGED: offset -> initial");
+                    startupOptions = StartupOptions.initial();
+                } else {
+                    if (compatibilityMode) {
+                        LOG.warn(">>> [MONGODB-STREAMER] COMPATIBILITY MODE, STARTUP MODE CHANGED: offset -> latest");
+                        startupOptions = StartupOptions.latest();
+                    } else {
+                        if (!offsetValue.matches("^[1-9][0-9]*$")) {
+                            Thrower.errAndThrow("MONGODB-STREAMER", String.format("OFFSET NOT IN TIMESTAMP MILLISECONDS FORMAT: %s", offsetValue));
+                        }
+
+                        long offsetTimestamp = Long.parseLong(offsetValue);
+
+                        LOG.info(">>> [MONGODB-STREAMER] STARTING FROM {} ({})",
+                            DateTimeUtils.toDateString(offsetTimestamp),
+                            offsetTimestamp
+                        );
+
+                        startupOptions = StartupOptions.timestamp(Long.parseLong(offsetValue));
+                    }
+                }
+
+                break;
+            default:
+                startupOptions = StartupOptions.initial();
         }
 
         return MongoDBSource.<String>builder()
@@ -131,6 +170,8 @@ public class MongoDBStreamer implements Streamer<String> {
             .collectionList(collectionFullName)
             .deserializer(new MongoDebeziumToJSONDeserializer(mongoDBDeserializationMode, tagSchemaMap))
             .startupOptions(startupOptions)
+            .batchSize(64) // TODO: THIS IS TO REDUCE RISK OF OOM, BUT SHOULD BE CONFIGURABLE
+            .pollMaxBatchSize(64)
             .build();
     }
 
@@ -140,7 +181,7 @@ public class MongoDBStreamer implements Streamer<String> {
         // DB.TABLE -> (OUTPUT-TAG, SCHEMA)
         Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap = new HashMap<>();
 
-        try (MongoClient mongoClient = MongoClients.create(String.format("mongodb://%s:%s@%s/", username, password, hosts, databaseName))) {
+        try (MongoClient mongoClient = MongoClients.create(String.format("mongodb://%s:%s@%s/", username, password, hosts))) {
             final MongoDatabase db = mongoClient.getDatabase(databaseName);
             Document buildInfo = db.runCommand(new Document("buildInfo", 1));
             String version = buildInfo.getString("version");
@@ -159,6 +200,8 @@ public class MongoDBStreamer implements Streamer<String> {
                 LOG.warn(">>> [MONGODB-STREAMER] MONGODB VERSION < 4.0, EITHER SNAPSHOT OR CDC FROM LATEST OFFSET");
                 LOG.warn(">>> [MONGODB-STREAMER] TIMESTAMP OFFSET IS SILENTLY IGNORED");
                 LOG.warn(">>> [MONGODB-STREAMER] CAN ONLY HAVE CONCURRENCY = 1 AS TIMESTAMP SPLITTING WILL NOT WORK");
+
+                compatibilityMode = true;
             }
 
             final String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);

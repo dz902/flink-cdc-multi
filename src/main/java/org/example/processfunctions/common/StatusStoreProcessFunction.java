@@ -19,7 +19,7 @@ public class StatusStoreProcessFunction extends KeyedProcessFunction<Byte, Strin
 implements CheckpointListener {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
 
-    private transient ValueState<String> jobIDState;
+    private String jobID = "";
     private transient ValueState<Long> lastRecordTimestampState;
     private transient ValueState<Long> recordCountState;
     private transient Collector<String> outCollector;
@@ -28,10 +28,8 @@ implements CheckpointListener {
     public void open(Configuration parameters) throws Exception {
         RuntimeContext runtimeCtx = getRuntimeContext();
 
-        jobIDState = runtimeCtx.getState(new ValueStateDescriptor<>(
-            "jobIDState",
-            TypeInformation.of(new TypeHint<String>() {})
-        ));
+        String jobId = runtimeCtx.getJobId().toString();
+
 
         lastRecordTimestampState = runtimeCtx.getState(new ValueStateDescriptor<>(
             "lastRecordState",
@@ -43,8 +41,7 @@ implements CheckpointListener {
             TypeInformation.of(new TypeHint<Long>() {})
         ));
 
-        String jobId = runtimeCtx.getJobId().toString();
-        jobIDState.update(jobId);
+        this.jobID = jobId;
     }
 
     @Override
@@ -62,23 +59,22 @@ implements CheckpointListener {
 
     @Override
     public void notifyCheckpointComplete(long checkpointId) throws Exception {
-        String jobID;
-
-        try {
-            jobID = jobIDState.value();
-        } catch (NullPointerException e) {
-            LOG.info(">>> [STATUS-OFFSET-STORE] CHECKPOINTING BEFORE FIRST MESSAGE, DO NOTHING");
-            return;
-        }
-
         String jobName = getRuntimeContext().getExecutionConfig().getGlobalJobParameters().toMap().get("jobName");
 
         if (StringUtils.isNullOrWhitespaceOnly(jobID) || StringUtils.isNullOrWhitespaceOnly(jobName)) {
             Thrower.errAndThrow("STATUS-STORE", "COULD NOT GET JOB ID");
         }
 
-        long recordCount = recordCountState.value();
-        long lastEventTimestamp = lastRecordTimestampState.value();
+        long recordCount = 0;
+        long lastEventTimestamp = 0;
+
+        try {
+            recordCount = recordCountState.value();
+            lastEventTimestamp = lastRecordTimestampState.value();
+        } catch (NullPointerException e) {
+            LOG.info(">>> [STATUS-STORE] NO RECORD PROCESSED YET");
+            return;
+        }
 
         JSONObject statusObject = new JSONObject();
 

@@ -179,14 +179,17 @@ public class FlinkCDCMulti {
             offsetStorePath = configJSON.getString("offset.store.path");
 
             if (StringUtils.isNullOrWhitespaceOnly(offsetStorePath)) {
-                LOG.info(">>> [MAIN] NO OFFSET STORE PATH SET, FEATURE DISABLED");
+                LOG.info(">>> [MAIN] OFFSET STORE CONFIG NOT FOUND, FEATURE DISABLED");
                 return;
             } else {
                 offsetStoreFilePath = String.format("%s/%s_offset.txt", offsetStorePath, sourceId);
+                LOG.info(">>> [MAIN] GOT OFFSET STORE PATH: {}", offsetStorePath);
+                LOG.info(">>> [MAIN] COMPUTED OFFSET STORE FILE PATH: {}", offsetStoreFilePath);
             }
+        } else {
+            LOG.info(">>> [MAIN] GOT OFFSET STORE FILE PATH: {}", offsetStoreFilePath);
         }
 
-        LOG.info(">>> [MAIN] OFFSET STORE PATH: {}", offsetStoreFilePath);
         LOG.info(">>> [MAIN] LOADING OFFSET FROM PATH: {}", offsetStoreFilePath);
 
         Path storeFilePath = new Path(offsetStoreFilePath);
@@ -202,7 +205,7 @@ public class FlinkCDCMulti {
             return;
         }
 
-        String offsetValueFromStore = "";
+        String offsetValueFromStore = null;
 
         try (FSDataInputStream storeInputStream = storeFS.open(storeFilePath)) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(storeInputStream));
@@ -215,19 +218,19 @@ public class FlinkCDCMulti {
 
             offsetValueFromStore = content.toString().trim();
         } catch (FileNotFoundException e) {
-            LOG.info(">>> [MAIN] OFFSET STORE DOES NOT EXIST, SNAPSHOT + CDC");
+            LOG.info(">>> [MAIN] OFFSET STORE FILE DOES NOT EXIST");
+            return;
         } catch (Exception e) {
-            LOG.error(">>> [MAIN] OFFSET STORE ERROR");
-            LOG.error(FlinkCDCMulti.offsetValue);
+            LOG.error(">>> [MAIN] OFFSET STORE ERROR: {}", FlinkCDCMulti.offsetValue);
             throw e;
         }
 
-        if (StringUtils.isNullOrWhitespaceOnly(offsetValueFromStore)) {
-            LOG.info(">>> [MAIN] EMPTY OFFSET STORE, SNAP + CDC");
+        if (offsetValueFromStore != null && offsetValueFromStore.isBlank()) {
+            LOG.info(">>> [MAIN] OFFSET STORE FILE IS EMPTY");
             return;
         }
 
-        LOG.info(">>> [MAIN] USING OFFSET: {}", offsetValueFromStore);
+        LOG.info(">>> [MAIN] OFFSET READ: {}", offsetValueFromStore);
         configJSON.put("offset.value", offsetValueFromStore);
     }
 

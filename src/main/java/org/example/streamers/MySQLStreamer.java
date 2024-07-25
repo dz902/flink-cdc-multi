@@ -36,16 +36,13 @@ public class MySQLStreamer implements Streamer<String> {
     private final int port;
     private final JSONObject tableNameMap;
     private String offsetFile;
+    private String startupMode;
     private int offsetPos;
-    private boolean snapshotOnly; // TODO: SNAPSHOT ONLY MODE
+    private final boolean snapshotOnly; // TODO: SNAPSHOT ONLY MODE
     private JSONObject snapshotConditions; // TODO: FOR REFILL DATA FROM A PERIOD
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
 
     public MySQLStreamer(JSONObject configJSON) {
-        // TODO: SUPPORT DB LEVEL CDC FOR MONGODB v4+
-        LOG.warn(">>> [MONGO-STREAMER] CURRENTLY ONLY SINGLE DB AND COLLECTION IS SUPPORTED");
-        LOG.warn(">>> [MONGO-STREAMER] BECAUSE THIS TOOL IS DEVELOPED AGAINST MONGO V3.6");
-
         this.hostname = Validator.ensureNotEmpty("source.hostname", configJSON.getString("source.hostname"));
         this.port = Integer.parseInt(
             Validator.ensureNotEmpty("source.port", configJSON.getString("source.port"))
@@ -64,12 +61,23 @@ public class MySQLStreamer implements Streamer<String> {
             this.offsetPos = Integer.parseInt(offsetSplits[1]);
         }
 
+        this.startupMode = configJSON.getString("startup.mode");
+
+        switch (startupMode) {
+            case "initial":
+            case "earliest":
+            case "latest":
+            case "offset":
+            case "timestamp":
+                break;
+            default:
+                startupMode = "initial";
+        }
+
         this.snapshotOnly = Boolean.parseBoolean(configJSON.getString("snapshot.only"));
 
         if (snapshotOnly) {
-            LOG.info(">>> [MYSQL-STREAMER] SNAPSHOT ONLY MODE");
-        } else {
-            LOG.info(">>> [MYSQL-STREAMER] SNAPSHOT + CDC MODE");
+            LOG.info(">>> [MYSQL-STREAMER] SNAPSHOT ONLY MODE, STARTUP MODE CHANGED: {} -> initial", startupMode);
         }
     }
 
@@ -77,12 +85,32 @@ public class MySQLStreamer implements Streamer<String> {
     public MySqlSource<String> getSource() {
         StartupOptions startupOptions;
 
-        if (StringUtils.isNullOrWhitespaceOnly(offsetFile) || offsetPos < 0) {
-            LOG.info(">>> [MYSQL-STREAMER] NO VALID OFFSET");
-            startupOptions = StartupOptions.initial();
-        } else {
-            startupOptions = StartupOptions.specificOffset(offsetFile, offsetPos);
+        LOG.info(">>> [MONGO-STREAMER] STARTUP MODE: {}", startupMode);
+
+        switch (startupMode) {
+            case "earliest":
+                startupOptions = StartupOptions.earliest();
+                break;
+            case "latest":
+                startupOptions = StartupOptions.latest();
+                break;
+            case "offset":
+                if (StringUtils.isNullOrWhitespaceOnly(offsetFile) || offsetPos < 0) {
+                    LOG.info(">>> [MYSQL-STREAMER] NO VALID OFFSET, STARTUP MODE CHANGED: {} -> initial", startupMode);
+                    startupOptions = StartupOptions.initial();
+                } else {
+                    startupOptions = StartupOptions.specificOffset(offsetFile, offsetPos);
+                }
+                break;
+            case "timestamp":
+                // TODO
+                //startupOptions = StartupOptions.timestamp();
+                Thrower.errAndThrow("MYSQL-STREAMER", "NOT SUPPORTED YET");
+                return null;
+            default:
+                startupOptions = StartupOptions.initial();
         }
+
 
         // BASIC BEST PRACTICE DEBEZIUM CONFIGURATIONS
 
