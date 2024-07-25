@@ -158,7 +158,7 @@ public class MongoDBStreamer implements Streamer<String> {
                 * */
                 LOG.warn(">>> [MONGODB-STREAMER] MONGODB VERSION < 4.0, EITHER SNAPSHOT OR CDC FROM LATEST OFFSET");
                 LOG.warn(">>> [MONGODB-STREAMER] TIMESTAMP OFFSET IS SILENTLY IGNORED");
-                LOG.warn(">>> [MONGODB-STREAMER] CAN ONLY HAVE CURRENCY = 1 AS TIMESTAMP SPLITTING WILL NOT WORK");
+                LOG.warn(">>> [MONGODB-STREAMER] CAN ONLY HAVE CONCURRENCY = 1 AS TIMESTAMP SPLITTING WILL NOT WORK");
             }
 
             final String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
