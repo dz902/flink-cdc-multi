@@ -21,6 +21,8 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
 - Supported databases
   - MySQL
     - Developed and tested against `8.0.38`, but should also work on `5.x`)
+    - When a DDL statement is received, auto stop task with a message
+    - A special DDL table (`{source_id}_{db_name}__{db_name}_ddl`) is created for each job to record DDLs for your reference
   - MongoDB
     - Developed and tested against `3.6`
       - Currently only syncs 1 table because `3.6` does not support watching db or deployment
@@ -40,8 +42,6 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - A single job to sync all or some tables in a database
     - (maybe) A single job to sync a whole deployment
   - No schema definition is required for source or target
-  - When a DDL statement is received, auto stop task with a message
-  - A special DDL table (`{source_id}_{db_name}__{db_name}_ddl`) is created for each job to record DDLs for your reference 
   - Auto binlog offset recording and restore for each table, with offsets recorded in files on HDFS or Amazon S3
   - Table name mapping for manual schema evolution
     - (planned) Auto table name mapping when a DDL is met
@@ -53,7 +53,7 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - Snapshot + CDC mode
   - CDC only mode, i.e. starting from given binlog offset
   - Debug mode, using `--debug` to show verbose message during testing (turn off in production as this creates multiple logs for every binlog)
-  - (in-dev) Job stats table for monitoring
+  - Job stats table for monitoring
   - (planned) Reading credentials from AWS Secrets Manager, AWS Parameters Store or other configuration managers for better security
   - (planned) Parquet compaction, a separate job
   - (planned) Dry-run mode, printing to console instead of writing to files
@@ -79,10 +79,10 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - `flink run-application -t yarn-application -Dyarn.application.name=job-name ./flink-cdc-multi.jar`
 - CLI Options
   - `--config s3://mybucket/myconfig.json` (can also be local for testing, or HDFS)
-    - See [example-configs](/)
-  - `--debug`
+    - See [example-configs](/src/resources/example-configs) for examples
+  - `--debug`, will show all DEBUG and TRACE logs (sent by this app only)
 - You should be able to get it running in any environment by changing `pom.xml` and use `compile` instead of provided
-  - Or, you can also copy Flink and Hadoop jars from a running EMR 
+  - Or, you can also copy Flink and Hadoop jars from a running EMR cluster
 
 ## Known Issues
 
