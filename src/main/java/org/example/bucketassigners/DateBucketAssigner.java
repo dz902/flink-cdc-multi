@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
-public class DatabaseTableDateBucketAssigner implements BucketAssigner<GenericRecord, String> {
+public class DateBucketAssigner implements BucketAssigner<GenericRecord, String> {
 
     //private static final long serialVersionUID = 1L;
 
@@ -20,11 +20,11 @@ public class DatabaseTableDateBucketAssigner implements BucketAssigner<GenericRe
 
     private transient DateTimeFormatter dateFormatter;
 
-    public DatabaseTableDateBucketAssigner() {
+    public DateBucketAssigner() {
         this(ZoneId.systemDefault());
     }
 
-    public DatabaseTableDateBucketAssigner(ZoneId zoneId) {
+    public DateBucketAssigner(ZoneId zoneId) {
         this.zoneId = Preconditions.checkNotNull(zoneId);
     }
 

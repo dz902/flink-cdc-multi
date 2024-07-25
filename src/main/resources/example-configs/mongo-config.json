@@ -8,6 +8,7 @@
   "source.database.name": "my-db",
   "source.collection.name": "my-db.my_coll",
   "mongodb.deserialization.mode": "top-level-string",
+  "snapshot.only": "false",
   "checkpoint.interval": 10,
   "checkpoint.storage": "filesystem",
   "checkpoint.directory": "s3://{bucket}/checkpoints",

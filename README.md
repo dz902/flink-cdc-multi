@@ -51,9 +51,9 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - Snapshot conditions
     - (in-dev) Snapshot only a subset of data for data refilling
   - Snapshot + CDC mode
-  - CDC only mode, i.e. starting from any given binlog offset
+  - CDC only mode, i.e. starting from given binlog offset
   - Debug mode, using `--debug` to show verbose message during testing (turn off in production as this creates multiple logs for every binlog)
-  - (planned) Job stats table for monitoring
+  - (in-dev) Job stats table for monitoring
   - (planned) Reading credentials from AWS Secrets Manager, AWS Parameters Store or other configuration managers for better security
   - (planned) Parquet compaction, a separate job
   - (planned) Dry-run mode, printing to console instead of writing to files
@@ -79,6 +79,7 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - `flink run-application -t yarn-application -Dyarn.application.name=job-name ./flink-cdc-multi.jar`
 - CLI Options
   - `--config s3://mybucket/myconfig.json` (can also be local for testing, or HDFS)
+    - See [example-configs](/)
   - `--debug`
 - You should be able to get it running in any environment by changing `pom.xml` and use `compile` instead of provided
   - Or, you can also copy Flink and Hadoop jars from a running EMR 

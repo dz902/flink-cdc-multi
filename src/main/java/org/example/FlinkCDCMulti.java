@@ -36,7 +36,7 @@ import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
-import org.example.bucketassigners.DatabaseTableDateBucketAssigner;
+import org.example.bucketassigners.DateBucketAssigner;
 import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
 import org.example.richmapfunctions.JSONToGenericRecordMapFunction;
 import org.example.sinkfunctions.SingleFileSinkFunction;
@@ -266,7 +266,7 @@ public class FlinkCDCMulti {
                     OnCheckpointRollingPolicy
                         .build()
                 )
-                .withBucketAssigner(new DatabaseTableDateBucketAssigner())
+                .withBucketAssigner(new DateBucketAssigner())
                 .build();
 
             sideOutputStream

@@ -221,6 +221,7 @@ public class MongoStreamer implements Streamer<String> {
 
             final Schema avroSchema = fieldAssembler.endRecord();
 
+            // TODO: CUSTOM OUTPUT PATH FORMAT
             final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedCollectionName);
             final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
 

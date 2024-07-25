@@ -149,7 +149,10 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
         recordObject.put("_db", sanitizedDatabaseName);
         recordObject.put("_tbl", sanitizedTableName);
         recordObject.put("_op", op);
-        recordObject.put("_ts", valueSource.getInt64("ts_ms"));
+
+        long ts = valueSource.getInt64("ts_ms");
+        ts = ts < 1 ? System.currentTimeMillis() : ts;
+        recordObject.put("_ts", ts);
 
         Map<String, ?> sourceOffset = sourceRecord.sourceOffset();
         String binlogFile = sourceOffset.get("file").toString();
