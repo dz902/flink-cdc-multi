@@ -11,8 +11,5 @@
   "checkpoint.interval": 10,
   "checkpoint.storage": "filesystem",
   "checkpoint.directory": "s3://{bucket}/checkpoints",
-  "offset.store.path": "s3://{bucket}/offsets",
-  "table.name.map": {
-    "dummy": "dummy_v20240713"
-  }
+  "offset.store.path": "s3://{bucket}/offsets"
 }
