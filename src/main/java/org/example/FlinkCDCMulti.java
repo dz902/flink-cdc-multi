@@ -52,10 +52,10 @@ import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 
 public class FlinkCDCMulti {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -275,13 +275,18 @@ public class FlinkCDCMulti {
             return;
         }
 
+        // TODO: EXTRACT THIS TO UTILS
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
+        String dateString = dateFormatter.format(Instant.ofEpochMilli(System.currentTimeMillis()));
+        String statusStoreFilePath = String.format("%s/dt=%s/%s", statusStorePath, dateString, UUID.randomUUID() + ".json");
+
         LOG.info(">>> [MAIN] CREATING STATUS STORE STREAM: {}", statusStorePath);
 
         sourceStream
             .keyBy(new NullByteKeySelector<>())
             .process(new StatusStoreProcessFunction())
             .setParallelism(1)
-            .print()
+            .addSink(new SingleFileSinkFunction(new Path(statusStoreFilePath)))
             .setParallelism(1);
     }
 

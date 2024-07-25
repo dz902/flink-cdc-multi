@@ -64,7 +64,15 @@ implements CheckpointListener {
 
     @Override
     public void notifyCheckpointComplete(long checkpointId) throws Exception {
-        String jobID = jobIDState.value();
+        String jobID;
+
+        try {
+            jobID = jobIDState.value();
+        } catch (NullPointerException e) {
+            LOG.info(">>> [STATUS-OFFSET-STORE] CHECKPOINTING BEFORE FIRST MESSAGE, DO NOTHING");
+            return;
+        }
+
         String jobName = getRuntimeContext().getExecutionConfig().getGlobalJobParameters().toMap().get("jobName");
 
         if (StringUtils.isNullOrWhitespaceOnly(jobID) || StringUtils.isNullOrWhitespaceOnly(jobName)) {

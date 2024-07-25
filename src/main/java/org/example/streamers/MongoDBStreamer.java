@@ -35,8 +35,9 @@ public class MongoDBStreamer implements Streamer<String> {
     private final String password;
     private final String offsetValue;
     private final boolean snapshotOnly;
+    private String mongoDBAuthDatabase;
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
-    private String mongodbDeserializationMode;
+    private String mongoDBDeserializationMode;
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
 
     public MongoDBStreamer(JSONObject configJSON) {
@@ -50,7 +51,7 @@ public class MongoDBStreamer implements Streamer<String> {
         this.username = configJSON.getString("source.username");
         this.password = configJSON.getString("source.password");
         this.offsetValue = configJSON.getString("offset.value");
-        this.mongodbDeserializationMode = configJSON.getString("mongodb.deserialization.mode");
+        this.mongoDBDeserializationMode = configJSON.getString("mongodb.deserialization.mode");
 
         if (StringUtils.isNullOrWhitespaceOnly(this.username) || StringUtils.isNullOrWhitespaceOnly(this.password)) {
             LOG.warn(">>> [MONGODB-STREAMER] NOT USING AUTHENTICATION");
@@ -72,11 +73,11 @@ public class MongoDBStreamer implements Streamer<String> {
             );
         }
 
-        if (StringUtils.isNullOrWhitespaceOnly(mongodbDeserializationMode)) {
+        if (StringUtils.isNullOrWhitespaceOnly(mongoDBDeserializationMode)) {
             LOG.warn(">>> [MONGODB-STREAMER] MONGODB DESERIALIZATION MODE NOT SET, DEFAULT TO: top-level-type");
-            mongodbDeserializationMode = "top-level-type";
+            mongoDBDeserializationMode = "top-level-type";
         } else {
-            switch (mongodbDeserializationMode) {
+            switch (mongoDBDeserializationMode) {
                 case "doc-string":
                 case "top-level-string":
                 case "top-level-type":
@@ -84,11 +85,11 @@ public class MongoDBStreamer implements Streamer<String> {
                 default:
                     Thrower.errAndThrow(
                         "MONGODB-STREAMER",
-                        String.format("UNKNOWN MONGODB DESERIALIZATION MODE: %s", mongodbDeserializationMode)
+                        String.format("UNKNOWN MONGODB DESERIALIZATION MODE: %s", mongoDBDeserializationMode)
                     );
             }
 
-            LOG.info(">>> [MONGODB-STREAMER] MONGODB DESERIALIZATION MODE: {}", mongodbDeserializationMode);
+            LOG.info(">>> [MONGODB-STREAMER] MONGODB DESERIALIZATION MODE: {}", mongoDBDeserializationMode);
         }
 
 
@@ -128,7 +129,7 @@ public class MongoDBStreamer implements Streamer<String> {
             .password(password)
             .databaseList(databaseName)
             .collectionList(collectionFullName)
-            .deserializer(new MongoDebeziumToJSONDeserializer(mongodbDeserializationMode, tagSchemaMap))
+            .deserializer(new MongoDebeziumToJSONDeserializer(mongoDBDeserializationMode, tagSchemaMap))
             .startupOptions(startupOptions)
             .build();
     }
@@ -139,8 +140,7 @@ public class MongoDBStreamer implements Streamer<String> {
         // DB.TABLE -> (OUTPUT-TAG, SCHEMA)
         Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap = new HashMap<>();
 
-        // Connect to MongoDB
-        try (MongoClient mongoClient = MongoClients.create(String.format("mongodb://%s/%s", hosts, databaseName))) {
+        try (MongoClient mongoClient = MongoClients.create(String.format("mongodb://%s:%s@%s/", username, password, hosts, databaseName))) {
             final MongoDatabase db = mongoClient.getDatabase(databaseName);
             Document buildInfo = db.runCommand(new Document("buildInfo", 1));
             String version = buildInfo.getString("version");
@@ -174,7 +174,7 @@ public class MongoDBStreamer implements Streamer<String> {
 
             Map<String, Class<?>> fieldTypes = new NoOverwriteHashMap<>();
 
-            if ("doc-string".equals(mongodbDeserializationMode)) {
+            if ("doc-string".equals(mongoDBDeserializationMode)) {
                 fieldTypes.put("doc", String.class);
             } else {
                 // Sample size
@@ -191,7 +191,7 @@ public class MongoDBStreamer implements Streamer<String> {
                             String fieldName = entry.getKey();
                             Object value = entry.getValue();
 
-                            if ("top-level-type".equals(mongodbDeserializationMode)) {
+                            if ("top-level-type".equals(mongoDBDeserializationMode)) {
                                 if (fieldTypes.containsKey(fieldName)) {
                                     if (fieldTypes.get(fieldName) != value.getClass()) {
                                         LOG.error(">>> [MONGO-STEAMER] FIELD TYPE CONFLICT: {} ({} <-> {})", fieldName, fieldTypes.get(fieldName), value.getClass());
@@ -202,7 +202,7 @@ public class MongoDBStreamer implements Streamer<String> {
                                 } else {
                                     fieldTypes.put(fieldName, value != null ? value.getClass() : Object.class);
                                 }
-                            } else if ("top-level-string".equals(mongodbDeserializationMode)) {
+                            } else if ("top-level-string".equals(mongoDBDeserializationMode)) {
                                 if (!fieldTypes.containsKey(fieldName)) {
                                     fieldTypes.put(fieldName, String.class);
                                 }
