@@ -42,16 +42,14 @@ implements CheckpointListener {
             "recordCountState",
             TypeInformation.of(new TypeHint<Long>() {})
         ));
+
+        String jobId = runtimeCtx.getJobId().toString();
+        jobIDState.update(jobId);
     }
 
     @Override
     public void processElement(String value, Context ctx, Collector<String> out) throws Exception {
         this.outCollector = out;
-
-        RuntimeContext runtimeCtx = getRuntimeContext();
-
-        String jobId = runtimeCtx.getJobId().toString();
-        jobIDState.update(jobId);
 
         JSONObject valueObject = JSONObject.parseObject(value);
         long timestamp = valueObject.getLongValue("_ts");
