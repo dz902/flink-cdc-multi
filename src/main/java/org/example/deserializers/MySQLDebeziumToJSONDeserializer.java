@@ -65,10 +65,11 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
                 String msg = String.format("INVALID DDL FOUND, MANUAL INTERVENTION NEEDED, STOPPING AT: (%s, %s)", binlogFile, binlogPos);
                 LOG.error(">>> [AVRO-DESERIALIZER] {}", msg);
                 LOG.error(
-                    ">>> POSSIBLE REASON: Table has been changed multiple times, " +
+                    ">>> [AVRO-DESERIALIZER] POSSIBLE REASON: Table has been changed multiple times, " +
                         "altering a field that does not exist before."
                 );
                 LOG.error(">>> DDL: {}", ddlStatement);
+                LOG.error(sourceRecord);
                 throw new RuntimeException(msg);
             }
 

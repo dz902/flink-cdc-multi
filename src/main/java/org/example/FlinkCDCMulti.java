@@ -73,6 +73,7 @@ public class FlinkCDCMulti {
     private static String offsetStoreFilePath;
     private static Streamer<String> streamer;
     private static DataStream<String> sourceStream;
+    private static DataStream<GenericRecord> sideStreams;
     private static StreamExecutionEnvironment env;
     private static Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private static JobExecutionResult jobExecutionResult;
@@ -300,11 +301,18 @@ public class FlinkCDCMulti {
             OutputTag<String> outputTag = entry.getValue().f0;
             Schema avroSchema = entry.getValue().f1;
 
-            SingleOutputStreamOperator<GenericRecord> sideOutputStream = mainDataStream
+            SingleOutputStreamOperator<GenericRecord> sideStream = mainDataStream
                 .getSideOutput(outputTag)
                 .map(new JSONToGenericRecordMapFunction(avroSchema))
                 .setParallelism(1)
                 .returns(new GenericRecordAvroTypeInfo(avroSchema));
+
+            if (sideStreams == null) {
+                sideStreams = sideStream;
+            } else {
+                // TODO: RECORD COUNTING BY TABLE
+                //sideStreams = sideStreams.union(sideStream);
+            }
 
             ParquetWriterFactory<GenericRecord> compressedParquetWriterFactory = new ParquetWriterFactory<>(
                 out -> AvroParquetWriter.<GenericRecord>builder(out).withSchema(avroSchema)
@@ -325,7 +333,7 @@ public class FlinkCDCMulti {
                 .withBucketAssigner(new DateBucketAssigner())
                 .build();
 
-            sideOutputStream
+            sideStream
                 .sinkTo(sink)
                 .setParallelism(1);
         }

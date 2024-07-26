@@ -1,5 +1,6 @@
 package org.example.processfunctions.mysql;
 
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
@@ -16,12 +17,17 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
 
     private boolean snapshotOnly = false;
+    private JSONArray tableArray = null;
 
     private transient ValueState<Long> timerState;
     private transient ValueState<Boolean> stopSignalState;
 
     public DelayedStopSignalProcessFunction(JSONObject config) {
         snapshotOnly = Validator.withDefault(config.getBoolean("snapshot.only"), false);
+        tableArray = Validator.withDefault(config.getJSONArray("source.table.array"), null);
+
+        LOG.debug("[STOP-SIGNAL-SENDER] SNAPSHOT ONLY: {}", snapshotOnly);
+        LOG.debug("[STOP-SIGNAL-SENDER] TARGET TABLE LIST: {}", tableArray);
     }
 
     @Override
@@ -56,8 +62,31 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
 
         String ddlStatement = valueJSONObject.getString("_ddl");
 
-        if (ddlStatement != null) {
-            LOG.info(">>> [STOP-SIGNAL-SENDER] DDL FOUND, SENDING STOP SIGNAL");
+        boolean ddlStatementFound = ddlStatement != null;
+        if (ddlStatementFound) {
+            boolean onlyStreamingSomeTables = tableArray != null;
+            if (onlyStreamingSomeTables) {
+                String db = valueJSONObject.getString("_db");
+                String ddlTable = valueJSONObject.getString("_ddl_tbl");
+                String ddlDBTable = db+"."+ddlTable;
+
+                boolean ddlFoundButNotForTargetTables = !tableArray.contains(ddlDBTable);
+                if (ddlFoundButNotForTargetTables) {
+                    LOG.info(">>> [STOP-SIGNAL-SENDER] DDL FOUND FOR NON-TARGET TABLE IGNORED: {}", ddlDBTable);
+                    LOG.debug(ddlStatement);
+                    return;
+                }
+
+                LOG.info(">>> [STOP-SIGNAL-SENDER] DDL FOUND FOR TARGET TABLE IGNORED: {}", ddlDBTable);
+                LOG.debug(ddlStatement);
+            }
+
+            boolean truncateTableStatementFound = ddlStatement.matches("(?i).*TRUNCATE\\s+TABLE.*");
+            if (truncateTableStatementFound) {
+                LOG.info(">>> [STOP-SIGNAL-SENDER] DDL-TRUNCATE-TABLE FOUND, SHOULD USE SNAPSHOT-ONLY MODE");
+            }
+
+            LOG.info(">>> [STOP-SIGNAL-SENDER] SENDING STOP SIGNAL");
             LOG.info(value);
 
             setTimer(ctx);

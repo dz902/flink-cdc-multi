@@ -22,6 +22,7 @@ import org.example.utils.Thrower;
 import org.example.utils.Validator;
 
 import java.sql.*;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -30,6 +31,8 @@ public class MySQLStreamer implements Streamer<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final String hostname;
     private final String databaseName;
+    private String[] tableArray;
+    private String tableList;
     private final String username;
     private final String password;
     private final String timezone;
@@ -48,6 +51,27 @@ public class MySQLStreamer implements Streamer<String> {
             Validator.ensureNotEmpty("source.port", configJSON.getString("source.port"))
         );
         this.databaseName = Validator.ensureNotEmpty("source.database.name", configJSON.getString("source.database.name"));
+
+        String allTables = databaseName+".*";
+        this.tableList = Validator.withDefault(configJSON.getString("source.table.list"), allTables);
+
+        if (!tableList.equals(allTables)) {
+            this.tableArray = tableList.split(",");
+
+            tableArray = Arrays.stream(tableArray)
+                .map(String::trim)
+                .map(tbl -> tbl.contains(".") ? tbl : databaseName +"."+tbl)
+                .toArray(String[]::new);
+
+            tableList = String.join(",", tableArray);
+        } else {
+            this.tableArray = null;
+        }
+
+        configJSON.put("source.table.array", tableArray);
+
+        LOG.info("[MYSQL-STREAMER] TABLE LIST: {}", tableList);
+
         this.username = Validator.ensureNotEmpty("source.username", configJSON.getString("source.username"));
         this.password = Validator.ensureNotEmpty("source.password", configJSON.getString("source.password"));
         this.timezone = Validator.withDefault(configJSON.getString("source.timezone"), "UTC");
@@ -118,6 +142,7 @@ public class MySQLStreamer implements Streamer<String> {
         debeziumProperties.setProperty("bigint.unsigned.handling.mode","long");
         debeziumProperties.setProperty("decimal.handling.mode","string");
         debeziumProperties.setProperty("database.history.skip.unparseable.ddl", "false");
+        debeziumProperties.setProperty("database.history.store.only.monitored.tables.ddl", "true");
 
         return MySqlSource.<String>builder()
             .hostname(hostname)
@@ -125,7 +150,7 @@ public class MySQLStreamer implements Streamer<String> {
             .username(username)
             .password(password)
             .databaseList(databaseName)
-            .tableList(databaseName + ".*")
+            .tableList(tableList)
             .serverTimeZone(timezone)
             .scanNewlyAddedTableEnabled(true)
             .deserializer(new MySQLDebeziumToJSONDeserializer(tagSchemaMap))
@@ -242,6 +267,7 @@ public class MySQLStreamer implements Streamer<String> {
     public SingleOutputStreamOperator<String> createMainDataStream(DataStream<String> sourceStream) {
         JSONObject snapshotConfig = new JSONObject();
         snapshotConfig.put("snapshot.only", snapshotOnly);
+        snapshotConfig.put("source.table.array", tableArray);
 
         return sourceStream
             .keyBy(new NullByteKeySelector<>())
