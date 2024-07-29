@@ -79,6 +79,8 @@ public class FlinkCDCMulti {
     private static JobExecutionResult jobExecutionResult;
 
     public static void main(String[] args) throws Exception {
+        LOG.info(">>> [MAIN] VERSION: {}", "v20240726-1557");
+
         createFlinkStreamingEnv();
 
         initializeFileSystem();

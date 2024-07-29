@@ -35,6 +35,7 @@ public class MongoDBStreamer implements Streamer<String> {
     private final String password;
     private final String offsetValue;
     private final boolean snapshotOnly;
+    private final String connectionOptions;
     private String startupMode;
     private String mongoDBAuthDatabase;
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
@@ -118,6 +119,12 @@ public class MongoDBStreamer implements Streamer<String> {
         if (snapshotOnly) {
             LOG.info(">>> [MONGODB-STREAMER] SNAPSHOT ONLY MODE, STARTUP MODE CHANGED: {} -> initial", startupMode);
         }
+
+        this.connectionOptions = Validator.withDefault(configJSON.getString("mongodb.connection.options"), "");
+
+        if (!StringUtils.isNullOrWhitespaceOnly(connectionOptions)) {
+            LOG.info(">>> [MONGO-STREAMER] CONNECTION OPTIONS: {}", connectionOptions);
+        }
     }
 
     public MongoDBSource<String> getSource() {
@@ -172,6 +179,7 @@ public class MongoDBStreamer implements Streamer<String> {
             .startupOptions(startupOptions)
             .batchSize(64) // TODO: THIS IS TO REDUCE RISK OF OOM, BUT SHOULD BE CONFIGURABLE
             .pollMaxBatchSize(64)
+            .connectionOptions(connectionOptions)
             .build();
     }
 
@@ -181,7 +189,7 @@ public class MongoDBStreamer implements Streamer<String> {
         // DB.TABLE -> (OUTPUT-TAG, SCHEMA)
         Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap = new HashMap<>();
 
-        try (MongoClient mongoClient = MongoClients.create(String.format("mongodb://%s:%s@%s/", username, password, hosts))) {
+        try (MongoClient mongoClient = MongoClients.create(String.format("mongodb://%s:%s@%s/?%s", username, password, hosts, connectionOptions))) {
             final MongoDatabase db = mongoClient.getDatabase(databaseName);
             Document buildInfo = db.runCommand(new Document("buildInfo", 1));
             String version = buildInfo.getString("version");
