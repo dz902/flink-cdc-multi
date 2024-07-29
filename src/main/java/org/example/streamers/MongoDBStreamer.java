@@ -36,6 +36,7 @@ public class MongoDBStreamer implements Streamer<String> {
     private final String offsetValue;
     private final boolean snapshotOnly;
     private final String connectionOptions;
+    private final JSONObject collNameMap;
     private String startupMode;
     private String mongoDBAuthDatabase;
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
@@ -96,6 +97,8 @@ public class MongoDBStreamer implements Streamer<String> {
         }
 
         this.collectionName = this.collectionFullName.split("\\.")[1];
+
+        this.collNameMap = configJSON.getJSONObject("collection.name.map");
 
         if (StringUtils.isNullOrWhitespaceOnly(this.username)
             || StringUtils.isNullOrWhitespaceOnly(this.password)) {
@@ -278,12 +281,27 @@ public class MongoDBStreamer implements Streamer<String> {
 
             final Schema avroSchema = fieldAssembler.endRecord();
 
+            String mappedTableName;
+            String sanitizedMappedCollName = sanitizedCollectionName;
+            if (collNameMap != null) {
+                mappedTableName = collNameMap.getString(collectionName);
+                if (mappedTableName != null) {
+                    sanitizedMappedCollName = Sanitizer.sanitize(mappedTableName);
+                }
+            }
+
             // TODO: CUSTOM OUTPUT PATH FORMAT
-            final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedCollectionName);
+            final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedMappedCollName);
             final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
 
             tagSchemaMap.put(sanitizedCollectionName, Tuple2.of(outputTag, avroSchema));
 
+            LOG.info(
+                ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", sanitizedDatabaseName, sanitizedCollectionName) ,
+                (
+                    !sanitizedCollectionName.equals(sanitizedMappedCollName) ? ("(" + sanitizedMappedCollName + ")") : ""
+                )
+            );
             LOG.debug(">>> [MONGODB-STREAMER] AVRO SCHEMA INFERRED FROM 100 SAMPLES");
             LOG.debug(avroSchema.toString(true));
         }

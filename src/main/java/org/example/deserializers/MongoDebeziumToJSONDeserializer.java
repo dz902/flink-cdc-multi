@@ -1,6 +1,7 @@
 package org.example.deserializers;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.ververica.cdc.debezium.DebeziumDeserializationSchema;
@@ -19,7 +20,9 @@ import org.example.utils.JSONUtils;
 import org.example.utils.Sanitizer;
 import org.example.utils.Thrower;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -82,7 +85,7 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
 
             if ("top-level-string".equals(mode)) {
                 if (v != null) {
-                    valueObject.put("string", JSON.toJSONString(v));
+                    valueObject.put("string", JSONObject.toJSONString(v));
                 } else {
                     valueObject.put("string", null);
                 }
@@ -117,6 +120,9 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
             case "UPDATE":
             case "DELETE":
                 break;
+            case "REPLACE":
+                op = "UPDATE";
+                break;
             default:
                 Thrower.errAndThrow("MONGO-DESERIALIZER", String.format("UNKNOWN OPERATION: %s", op));
         }
@@ -128,6 +134,7 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
 
         if ("top-level-string".equals(mode)) {
             Schema schema = tagSchemaMap.get(sanitizedCollectionName).f1;
+            Set<String> schemaFields = new HashSet<>();
 
             for (Schema.Field field : schema.getFields()) {
                 String sanitizedFieldName = Sanitizer.sanitize(field.name());
@@ -137,6 +144,32 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
                     LOG.warn(">>> [DESERIALIZER] IF SCHEMA IS NOT STABLE, CONSIDER USING DESERIALIZATION MODE: doc-string");
                     sanitizedRecordObject.put(sanitizedFieldName, null);
                 }
+
+                schemaFields.add(Sanitizer.sanitize(field.name()));
+            }
+
+            JSONArray extraKeys = new JSONArray();
+            for (String objKey : sanitizedRecordObject.keySet()) {
+                // TODO: THIS IS NOT VERY DUMMY-PROOF
+                if (objKey.equals("_db") || objKey.equals("_coll")) {
+                    continue;
+                }
+
+                if (!schemaFields.contains(objKey)) {
+                    extraKeys.add(objKey);
+                }
+            }
+
+            if (!extraKeys.isEmpty()) {
+                String extraKeysString = String.join(", ", (String[]) extraKeys.toArray(new String[0]));
+                LOG.error(">>> [DESERIALIZER] DATA LOSS CAUSED BY EXTRA FIELDS: {}", extraKeysString);
+                Thrower.errAndThrow("DESERIALIZER",
+                    String.format(
+                        "SCHEMA CHANGED, MUST MAP COLLECTION TO NEW NAME OR USE doc-string MODE: %s.%s -> %s.%s_vYYYY-MM-DD",
+                        databaseName, collectionName, databaseName, collectionName
+                    )
+                );
+                return;
             }
         }
 
