@@ -73,11 +73,6 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
 
         JSONObject sanitizedRecordObject = new JSONObject();
 
-        if ("doc-string".equals(mode)) {
-            // TODO: NOT SUPPORTED YET
-            Thrower.errAndThrow("", "");
-        }
-
         for (String fieldName : recordObject.keySet()) {
             String sanitizedFieldName = fieldName.replace('-', '_');
             Object v = recordObject.get(fieldName);
@@ -125,6 +120,14 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
                 break;
             default:
                 Thrower.errAndThrow("MONGO-DESERIALIZER", String.format("UNKNOWN OPERATION: %s", op));
+        }
+
+        JSONObject docObject = sanitizedRecordObject;
+        if ("doc-string".equals(mode)) {
+            sanitizedRecordObject = new JSONObject();
+            sanitizedRecordObject.put("_id", docObject.getString("_id"));
+            docObject.remove("_id");
+            sanitizedRecordObject.put("doc", docObject.toJSONString());
         }
 
         sanitizedRecordObject.put("_db", sanitizedDatabaseName);

@@ -223,14 +223,12 @@ public class MongoDBStreamer implements Streamer<String> {
                 sanitizedDatabaseName, sanitizedCollectionName
             );
 
-            MongoDatabase database = mongoClient.getDatabase(databaseName);
-            MongoCollection<Document> collection = database.getCollection(collectionName);
-
             Map<String, Class<?>> fieldTypes = new NoOverwriteHashMap<>();
 
-            if ("doc-string".equals(mongoDBDeserializationMode)) {
-                fieldTypes.put("doc", String.class);
-            } else {
+            if (!"doc-string".equals(mongoDBDeserializationMode)) {
+                MongoDatabase database = mongoClient.getDatabase(databaseName);
+                MongoCollection<Document> collection = database.getCollection(collectionName);
+
                 // Sample size
                 int sampleSize = 100;
 
@@ -275,6 +273,12 @@ public class MongoDBStreamer implements Streamer<String> {
             }
 
             FieldAssembler<Schema> fieldAssembler = AVROUtils.createFieldAssemblerWithFieldTypes(fieldTypes);
+
+            // TODO: THIS DOES NOT LOOK LOOK, REFACTOR DOC-STRING LINE
+            if ("doc-string".equals(mongoDBDeserializationMode)) {
+                AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_id", String.class, false);
+                AVROUtils.addFieldToFieldAssembler(fieldAssembler, "doc", String.class, false);
+            }
 
             AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_op", String.class, false);
             AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_ts", Long.class, false);
