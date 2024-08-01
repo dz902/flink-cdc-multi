@@ -31,6 +31,8 @@ public abstract class AVROUtils {
             case "ObjectId":
             case "String":
             case "Document":
+            case "JSONObject":
+            case "JSONArray":
                 return Schema.create(Schema.Type.STRING);
             case "Integer":
                 return Schema.create(Schema.Type.INT);
@@ -41,7 +43,7 @@ public abstract class AVROUtils {
             case "Boolean":
                 return Schema.create(Schema.Type.BOOLEAN);
             default:
-                LOG.warn(
+                LOG.debug(
                     ">>> [AVRO-SCHEMA-CONVERTER] UNKNOWN DATA TYPE DEFAULTED TO STRING: {}",
                     javaClass.getSimpleName()
                 );
