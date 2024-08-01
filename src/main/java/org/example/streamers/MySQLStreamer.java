@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.stream.Collectors;
 
 public class MySQLStreamer implements Streamer<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -44,6 +45,7 @@ public class MySQLStreamer implements Streamer<String> {
     private final boolean snapshotOnly; // TODO: SNAPSHOT ONLY MODE
     private JSONObject snapshotConditions; // TODO: FOR REFILL DATA FROM A PERIOD
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
+    private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
 
     public MySQLStreamer(JSONObject configJSON) {
         this.hostname = Validator.ensureNotEmpty("source.hostname", configJSON.getString("source.hostname"));
@@ -98,6 +100,15 @@ public class MySQLStreamer implements Streamer<String> {
                 startupMode = "initial";
         }
 
+        LOG.info(">>> [MYSQL-STREAMER] STARTUP MODE: {}", startupMode);
+
+        if (!StringUtils.isNullOrWhitespaceOnly(offsetFile)) {
+            if (!startupMode.equals("offset")) {
+                LOG.info(">>> [MYSQL-STREAMER] OFFSET FOUND, STARTUP MODE CHANGED: {} -> offset", startupMode);
+                startupMode = "offset";
+            }
+        }
+
         this.snapshotOnly = Boolean.parseBoolean(configJSON.getString("snapshot.only"));
 
         if (snapshotOnly) {
@@ -120,7 +131,7 @@ public class MySQLStreamer implements Streamer<String> {
                 break;
             case "offset":
                 if (StringUtils.isNullOrWhitespaceOnly(offsetFile) || offsetPos < 0) {
-                    LOG.info(">>> [MYSQL-STREAMER] NO VALID OFFSET, STARTUP MODE CHANGED: {} -> initial", startupMode);
+                    Thrower.errAndThrow(">>> [MYSQL-STREAMER] NO VALID OFFSET, STARTUP MODE CHANGED: {} -> initial", startupMode);
                     startupOptions = StartupOptions.initial();
                 } else {
                     startupOptions = StartupOptions.specificOffset(offsetFile, offsetPos);
@@ -161,7 +172,7 @@ public class MySQLStreamer implements Streamer<String> {
     }
 
     @Override
-    public Map<String, Tuple2<OutputTag<String>, Schema>> createTagSchemaMap() {
+    public Map<String, Tuple2<OutputTag<String>, String>> createTagSchemaMap() {
         final String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
         Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap = new HashMap<>();
 
@@ -259,8 +270,13 @@ public class MySQLStreamer implements Streamer<String> {
         LOG.info(String.valueOf(ddlAvroSchema));
 
         this.tagSchemaMap = tagSchemaMap;
+        this.tagSchemaStringMap = tagSchemaMap.entrySet().stream()
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
+            ));
 
-        return tagSchemaMap;
+        return tagSchemaStringMap;
     }
 
     @Override

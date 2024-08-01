@@ -3,12 +3,12 @@ package org.example.streamers;
 import com.alibaba.fastjson.JSONObject;
 import com.mongodb.client.*;
 import com.ververica.cdc.connectors.base.options.StartupOptions;
-import org.apache.flink.streaming.api.datastream.DataStream;
 import com.ververica.cdc.connectors.mongodb.source.MongoDBSource;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder.FieldAssembler;
 import org.apache.flink.api.java.functions.NullByteKeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
@@ -38,8 +38,6 @@ public class MongoDBStreamer implements Streamer<String> {
     private final String connectionOptions;
     private final JSONObject collNameMap;
     private String startupMode;
-    private String mongoDBAuthDatabase;
-    private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private String mongoDBDeserializationMode;
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
     private boolean compatibilityMode = false;
@@ -178,7 +176,7 @@ public class MongoDBStreamer implements Streamer<String> {
             .password(password)
             .databaseList(databaseName)
             .collectionList(collectionFullName)
-            .deserializer(new MongoDebeziumToJSONDeserializer(mongoDBDeserializationMode, tagSchemaMap))
+            .deserializer(new MongoDebeziumToJSONDeserializer(mongoDBDeserializationMode, tagSchemaStringMap))
             .startupOptions(startupOptions)
             .batchSize(64) // TODO: THIS IS TO REDUCE RISK OF OOM, BUT SHOULD BE CONFIGURABLE
             .pollMaxBatchSize(64)
@@ -186,7 +184,7 @@ public class MongoDBStreamer implements Streamer<String> {
             .build();
     }
 
-    public Map<String, Tuple2<OutputTag<String>, Schema>> createTagSchemaMap() {
+    public Map<String, Tuple2<OutputTag<String>, String>> createTagSchemaMap() {
         LOG.info(">>> [MONGODB-STREAMER] CREATING TAG SCHEMA MAP");
 
         // DB.TABLE -> (OUTPUT-TAG, SCHEMA)
@@ -310,14 +308,13 @@ public class MongoDBStreamer implements Streamer<String> {
             LOG.debug(avroSchema.toString(true));
         }
 
-        this.tagSchemaMap = tagSchemaMap;
         this.tagSchemaStringMap = tagSchemaMap.entrySet().stream()
             .collect(Collectors.toMap(
                 Map.Entry::getKey,
                 entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
             ));
 
-        return tagSchemaMap;
+        return tagSchemaStringMap;
     }
 
     public SingleOutputStreamOperator<String> createMainDataStream(DataStream<String> sourceStream) {

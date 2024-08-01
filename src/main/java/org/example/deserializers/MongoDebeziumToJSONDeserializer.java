@@ -23,6 +23,7 @@ import org.example.utils.Thrower;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -33,11 +34,11 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
     * doc-string = there is only one field "doc", the whole document is converted into a JSON string
     * */
     private String mode = "top-level-string";
-    private final Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
+    private final Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
 
-    public MongoDebeziumToJSONDeserializer(String mode, Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap) {
+    public MongoDebeziumToJSONDeserializer(String mode, Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap) {
         this.mode = mode;
-        this.tagSchemaMap = tagSchemaMap;
+        this.tagSchemaStringMap = tagSchemaStringMap;
     }
 
     @Override
@@ -136,6 +137,13 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
         sanitizedRecordObject.put("_ts", value.getInt64("ts_ms"));
 
         if ("top-level-string".equals(mode)) {
+            // TODO: UGLY
+            Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap = tagSchemaStringMap.entrySet().stream()
+                .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> Tuple2.of(entry.getValue().f0, new Schema.Parser().parse(entry.getValue().f1))
+                ));
+
             Schema schema = tagSchemaMap.get(sanitizedCollectionName).f1;
             Set<String> schemaFields = new HashSet<>();
 

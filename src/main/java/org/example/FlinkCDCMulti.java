@@ -2,7 +2,6 @@ package org.example;
 
 import com.alibaba.fastjson.JSONObject;
 import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.commons.cli.*;
 import org.apache.flink.api.common.JobExecutionResult;
@@ -23,6 +22,7 @@ import org.apache.flink.core.plugin.PluginManager;
 import org.apache.flink.core.plugin.PluginUtils;
 import org.apache.flink.formats.avro.typeutils.GenericRecordAvroTypeInfo;
 import org.apache.flink.formats.parquet.ParquetWriterFactory;
+import org.apache.flink.formats.parquet.avro.AvroParquetWriters;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
@@ -35,8 +35,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.LoggerConfig;
-import org.apache.parquet.avro.AvroParquetWriter;
-import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.example.bucketassigners.DateBucketAssigner;
 import org.example.processfunctions.common.StatusStoreProcessFunction;
 import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
@@ -56,6 +54,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class FlinkCDCMulti {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
@@ -75,7 +74,7 @@ public class FlinkCDCMulti {
     private static DataStream<String> sourceStream;
     private static DataStream<GenericRecord> sideStreams;
     private static StreamExecutionEnvironment env;
-    private static Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
+    private static Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
     private static JobExecutionResult jobExecutionResult;
 
     public static void main(String[] args) throws Exception {
@@ -94,11 +93,11 @@ public class FlinkCDCMulti {
         configureOffset();
 
         createStreamer();
-        createTagSchemaMap();
+        createTagSchemaStringMap();
         createSourceStream();
         createSideStreams();
-        createOffsetStoreStream();
-        createStatusStoreStream();
+        //createOffsetStoreStream();
+        //createStatusStoreStream();
 
         addDefaultPrintSink();
         setFlinkRestartStrategy();
@@ -106,8 +105,8 @@ public class FlinkCDCMulti {
         startFlinkJob();
     }
 
-    private static void createTagSchemaMap() {
-        tagSchemaMap = streamer.createTagSchemaMap();
+    private static void createTagSchemaStringMap() {
+        tagSchemaStringMap = streamer.createTagSchemaMap();
     }
 
     private static void createFlinkStreamingEnv() {
@@ -299,13 +298,20 @@ public class FlinkCDCMulti {
     private static void createSideStreams() {
         SingleOutputStreamOperator<String> mainDataStream = streamer.createMainDataStream(sourceStream);
 
+        // TODO: UGLY
+        Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap = tagSchemaStringMap.entrySet().stream()
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> Tuple2.of(entry.getValue().f0, new Schema.Parser().parse(entry.getValue().f1))
+            ));
+
         for (Map.Entry<String, Tuple2<OutputTag<String>, Schema>> entry : tagSchemaMap.entrySet()) {
             OutputTag<String> outputTag = entry.getValue().f0;
             Schema avroSchema = entry.getValue().f1;
 
             SingleOutputStreamOperator<GenericRecord> sideStream = mainDataStream
                 .getSideOutput(outputTag)
-                .map(new JSONToGenericRecordMapFunction(avroSchema))
+                .map(new JSONToGenericRecordMapFunction(avroSchema.toString()))
                 .setParallelism(1)
                 .returns(new GenericRecordAvroTypeInfo(avroSchema));
 
@@ -316,12 +322,8 @@ public class FlinkCDCMulti {
                 //sideStreams = sideStreams.union(sideStream);
             }
 
-            ParquetWriterFactory<GenericRecord> compressedParquetWriterFactory = new ParquetWriterFactory<>(
-                out -> AvroParquetWriter.<GenericRecord>builder(out).withSchema(avroSchema)
-                    .withDataModel(GenericData.get())
-                    .withCompressionCodec(CompressionCodecName.SNAPPY)
-                    .build()
-            );
+            Schema avroSchema1 = new Schema.Parser().parse(avroSchema.toString());
+            ParquetWriterFactory<GenericRecord> compressedParquetWriterFactory = AvroParquetWriters.forGenericRecord(avroSchema1);
 
             Path outputPath = new Path(
                 String.format("%s/%s_%s", sinkPath, sourceId, outputTag.getId())

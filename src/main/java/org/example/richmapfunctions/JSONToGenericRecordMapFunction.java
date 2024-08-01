@@ -17,8 +17,8 @@ public class JSONToGenericRecordMapFunction extends RichMapFunction<String, Gene
     private final String schemaString;
     private transient Schema avroSchema;
 
-    public JSONToGenericRecordMapFunction(Schema schema) {
-        this.schemaString = schema.toString();
+    public JSONToGenericRecordMapFunction(String schemaString) {
+        this.schemaString = schemaString;
     }
 
     @Override
