@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;
+import com.alibaba.fastjson2.JSONException;
 import com.ververica.cdc.debezium.DebeziumDeserializationSchema;
 import org.apache.avro.Schema;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
@@ -25,7 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
+public class MongoDBDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
 
     /*
@@ -36,7 +37,7 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
     private String mode = "top-level-string";
     private final Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
 
-    public MongoDebeziumToJSONDeserializer(String mode, Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap) {
+    public MongoDBDebeziumToJSONDeserializer(String mode, Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap) {
         this.mode = mode;
         this.tagSchemaStringMap = tagSchemaStringMap;
     }
@@ -52,9 +53,25 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
 
         LOG.debug(">>> [AVRO-DESERIALIZER] DESERIALIZING ROW");
 
-        String id = JSONUtils.objectToJSONObject(key.get("_id"))
-            .getJSONObject("_id")
-            .getString("$oid");
+        String id = null;
+        JSONObject idObject = JSONUtils
+            .objectToJSONObject(key.get("_id"));
+
+        try {
+            JSONObject subIDObject = idObject.getJSONObject("_id");
+
+            // ONLY SPECIAL TREATMENT FOR OBJECT ID TYPE
+            id = subIDObject.getString("$oid");
+
+            if (id == null) {
+                id = idObject.get("_id").toString();
+            }
+        } catch (JSONException e) {
+            id = idObject.get("_id").toString();
+
+            LOG.debug(">>> [AVRO-DESERIALIZER] NON-STANDARD _id FIELD: {}", id);
+        }
+
         String databaseName = valueNS.getString("db");
         String collectionName = valueNS.getString("coll");
         String sanitizedDatabaseName = databaseName.replace('-', '_');
@@ -77,6 +94,12 @@ public class MongoDebeziumToJSONDeserializer implements DebeziumDeserializationS
         for (String fieldName : recordObject.keySet()) {
             String sanitizedFieldName = fieldName.replace('-', '_');
             Object v = recordObject.get(fieldName);
+
+            if (sanitizedFieldName.equals("_id")) {
+                sanitizedRecordObject.put(sanitizedFieldName, v);
+                continue;
+            }
+
             JSONObject valueObject = new JSONObject();
 
             if ("top-level-string".equals(mode)) {

@@ -16,7 +16,7 @@ import org.apache.hadoop.util.VersionUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bson.Document;
-import org.example.deserializers.MongoDebeziumToJSONDeserializer;
+import org.example.deserializers.MongoDBDebeziumToJSONDeserializer;
 import org.example.processfunctions.mongodb.DelayedStopSignalProcessFunction;
 import org.example.processfunctions.mongodb.SideInputProcessFunction;
 import org.example.utils.*;
@@ -176,7 +176,7 @@ public class MongoDBStreamer implements Streamer<String> {
             .password(password)
             .databaseList(databaseName)
             .collectionList(collectionFullName)
-            .deserializer(new MongoDebeziumToJSONDeserializer(mongoDBDeserializationMode, tagSchemaStringMap))
+            .deserializer(new MongoDBDebeziumToJSONDeserializer(mongoDBDeserializationMode, tagSchemaStringMap))
             .startupOptions(startupOptions)
             .batchSize(64) // TODO: THIS IS TO REDUCE RISK OF OOM, BUT SHOULD BE CONFIGURABLE
             .pollMaxBatchSize(64)

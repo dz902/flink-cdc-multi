@@ -100,3 +100,13 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
 - Snapshot only mode will only stop when there is a CDC event
   - Currently, the connector will not know whether a snapshot scan is completed until there is a CDC event
   - (planned) We could add a timeout because snapshot scan is supposed to be continuous
+- MongoDB
+  - It is recommended to use `doc-string` mode with which the whole document is stored as a JSON string if your schema is not consistent
+    - In other modes, errors will be thrown if schema change is detected, and there will be a lot of work (table name mapping, offset, etc.)
+  - The `_id` field is specially treated
+    - If it is `$oid` or `ObjectID` type, then its value (a hash string) will be extracted as the value of `_id` field
+    - If it is a string or integer its literal value is converted into a string and used as value of `_id` field
+      - So, if you are not following good practices of using consistent `_id` (e.g. mixing string, int and ObjectID), you will risk having duplicate `_id`s
+- Application Mode is not supported
+  - Due to class loading issues with Application Mode, this app will only run properly using Per-Job mode
+  - Should you decide to use Application Mode, change class loading to `parent-first`, note this will break Session Mode
