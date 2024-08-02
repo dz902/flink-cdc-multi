@@ -27,6 +27,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.OnCheckpointRollingPolicy;
 import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
@@ -38,6 +39,7 @@ import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.example.bucketassigners.DateBucketAssigner;
 import org.example.processfunctions.common.StatusStoreProcessFunction;
 import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
+import org.example.processfunctions.mysql.BinlogOffsetStoreProcessFunction;
 import org.example.richmapfunctions.JSONToGenericRecordMapFunction;
 import org.example.sinkfunctions.SingleFileSinkFunction;
 import org.example.streamers.MongoDBStreamer;
@@ -96,8 +98,8 @@ public class FlinkCDCMulti {
         createTagSchemaStringMap();
         createSourceStream();
         createSideStreams();
-        //createOffsetStoreStream();
-        //createStatusStoreStream();
+        createOffsetStoreStream();
+        createStatusStoreStream();
 
         addDefaultPrintSink();
         setFlinkRestartStrategy();
@@ -243,7 +245,7 @@ public class FlinkCDCMulti {
         }
 
         switch (sourceType) {
-            case "mongo":
+            case "mongodb":
                 streamer = new MongoDBStreamer(configJSON);
                 break;
             case "mysql":
@@ -263,9 +265,22 @@ public class FlinkCDCMulti {
 
         LOG.info(">>> [MAIN] CREATING OFFSET STREAM: {}", offsetStoreFilePath);
 
+        KeyedProcessFunction<Byte, String, String> offsetFunc;
+        switch (sourceType) {
+            case "mysql":
+                offsetFunc = new BinlogOffsetStoreProcessFunction();
+                break;
+            case "mongodb":
+                offsetFunc = new TimestampOffsetStoreProcessFunction();
+                break;
+            default:
+                Thrower.errAndThrow("MAIN", String.format("UNKNOWN SOURCE TYPE: %s", sourceType));
+                return;
+        }
+
         sourceStream
             .keyBy(new NullByteKeySelector<>())
-            .process(new TimestampOffsetStoreProcessFunction())
+            .process(offsetFunc)
             .setParallelism(1)
             .addSink(new SingleFileSinkFunction(new Path(offsetStoreFilePath)))
             .setParallelism(1);

@@ -1,7 +1,7 @@
 {
   "sink.path": "/tmp/test",
-  "source.type": "mongo",
-  "source.id": "mongo_source",
+  "source.type": "mongodb",
+  "source.id": "mongodb_source",
   "source.hosts": "localhost:27017",
   "source.username": "",
   "source.password": "",

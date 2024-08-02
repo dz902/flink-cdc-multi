@@ -82,12 +82,12 @@ public class MySQLStreamer implements Streamer<String> {
         String offsetValue = configJSON.getString("offset.value");
 
         if (!StringUtils.isNullOrWhitespaceOnly(offsetValue)) {
-            String[] offsetSplits = offsetValue.split("\\.");
+            String[] offsetSplits = offsetValue.split(",");
             this.offsetFile = offsetSplits[0];
             this.offsetPos = Integer.parseInt(offsetSplits[1]);
         }
 
-        this.startupMode = configJSON.getString("startup.mode");
+        this.startupMode = Validator.withDefault(configJSON.getString("startup.mode"), "initial");
 
         switch (startupMode) {
             case "initial":
