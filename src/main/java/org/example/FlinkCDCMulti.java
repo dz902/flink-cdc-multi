@@ -140,18 +140,17 @@ public class FlinkCDCMulti {
     private static void startFlinkJob() throws Exception {
         String jobName = null;
 
-        if (StringUtils.isNullOrWhitespaceOnly(argName)) {
+        String configJobName = configJSON.getString("job.name");
+        boolean argNameIsSet = !StringUtils.isNullOrWhitespaceOnly(argName);
+        boolean configJobNameIsSet = !StringUtils.isNullOrWhitespaceOnly(configJobName);
+
+        if (argNameIsSet) {
             jobName = argName;
             LOG.info(">>> [MAIN] JOB NAME FROM CLI ARGS: {}", jobName);
-        }
-
-        String configJobName = configJSON.getString("job.name");
-        if (StringUtils.isNullOrWhitespaceOnly(configJobName)) {
+        } else if (configJobNameIsSet) {
             jobName = configJobName;
             LOG.info(">>> [MAIN] JOB NAME FROM CONFIG FILE: {}", jobName);
-        }
-
-        if (StringUtils.isNullOrWhitespaceOnly(jobName)) {
+        } else {
             jobName = "JOB-" + sourceId;
             LOG.info(">>> [MAIN] JOB NAME NOT, USING DEFAULT: {}", jobName);
         }
