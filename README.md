@@ -46,7 +46,7 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - No schema definition is required for source or target
   - Auto binlog offset recording and restore for each table, with offsets recorded in files on HDFS or Amazon S3
   - Table name mapping for manual schema evolution
-    - (planned) Auto table name mapping when a DDL is met
+    - (in-dev) Auto table name mapping when a DDL is met, for MySQL
   - Auto data partitioning based on message time
     - (planned) Data partitioning based on event time
   - Snapshot only mode
@@ -56,7 +56,7 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - CDC only mode, i.e. starting from given binlog offset
   - Debug mode, using `--debug` to show verbose message during testing (turn off in production as this creates multiple logs for every binlog)
   - Job stats table for monitoring
-  - (planned) Reading credentials from AWS Secrets Manager, AWS Parameters Store or other configuration managers for better security
+  - (in-dev) Reading credentials from AWS Secrets Manager, AWS Parameters Store or other configuration managers for better security
   - (planned) Parquet compaction, a separate job
   - (planned) Dry-run mode, printing to console instead of writing to files
   - (planned) Auto-generate target `CREATE TABLE` SQL

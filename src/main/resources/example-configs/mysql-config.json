@@ -19,5 +19,6 @@
   },
   "table.name.map": {
     "dummy": "dummy_v20240713"
-  }
+  },
+  "table.name.map.store.file.path": "s3://{bucket}/"
 }
