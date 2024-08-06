@@ -4,7 +4,6 @@ import com.alibaba.fastjson.JSONObject;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.commons.cli.*;
-import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.connector.source.Source;
@@ -33,7 +32,6 @@ import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.example.bucketassigners.DateBucketAssigner;
@@ -47,6 +45,8 @@ import org.example.streamers.MySQLStreamer;
 import org.example.streamers.Streamer;
 import org.example.utils.Thrower;
 import org.example.utils.Validator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
@@ -59,9 +59,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class FlinkCDCMulti {
-    private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
+    private static final Logger LOG = LoggerFactory.getLogger("flink-cdc-multi");
     private static final Configuration flinkConfig = GlobalConfiguration.loadConfiguration();
-    private static final Options options = new Options();
     private static String argConfig;
     private static String argName;
     private static Boolean argDebugMode = false;
@@ -70,14 +69,12 @@ public class FlinkCDCMulti {
     private static String sourceId;
     private static String sinkPath;
     private static String offsetValue;
-    private static String offsetStorePath;
     private static String offsetStoreFilePath;
     private static Streamer<String> streamer;
     private static DataStream<String> sourceStream;
     private static DataStream<GenericRecord> sideStreams;
     private static StreamExecutionEnvironment env;
     private static Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
-    private static JobExecutionResult jobExecutionResult;
 
     public static void main(String[] args) throws Exception {
         LOG.info(">>> [MAIN] VERSION: {}", "v20240726-1557");
@@ -140,7 +137,7 @@ public class FlinkCDCMulti {
     }
 
     private static void startFlinkJob() throws Exception {
-        String jobName = null;
+        String jobName;
 
         String configJobName = configJSON.getString("job.name");
         boolean argNameIsSet = !StringUtils.isNullOrWhitespaceOnly(argName);
@@ -163,7 +160,7 @@ public class FlinkCDCMulti {
         final ParameterTool params = ParameterTool.fromMap(paramsMap);
         env.getConfig().setGlobalJobParameters(params);
 
-        jobExecutionResult = env.execute(jobName);
+        env.execute();
     }
 
     private static void configureOffset() throws IOException {
@@ -179,7 +176,7 @@ public class FlinkCDCMulti {
         offsetStoreFilePath = configJSON.getString("offset.store.file.path");
 
         if (StringUtils.isNullOrWhitespaceOnly(offsetStoreFilePath)) {
-            offsetStorePath = configJSON.getString("offset.store.path");
+            String offsetStorePath = configJSON.getString("offset.store.path");
 
             if (StringUtils.isNullOrWhitespaceOnly(offsetStorePath)) {
                 LOG.info(">>> [MAIN] OFFSET STORE CONFIG NOT FOUND, FEATURE DISABLED");
@@ -208,7 +205,7 @@ public class FlinkCDCMulti {
             return;
         }
 
-        String offsetValueFromStore = null;
+        String offsetValueFromStore;
 
         try (FSDataInputStream storeInputStream = storeFS.open(storeFilePath)) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(storeInputStream));
@@ -228,7 +225,7 @@ public class FlinkCDCMulti {
             throw e;
         }
 
-        if (offsetValueFromStore != null && offsetValueFromStore.isBlank()) {
+        if (offsetValueFromStore.isBlank()) {
             LOG.info(">>> [MAIN] OFFSET STORE FILE IS EMPTY");
             return;
         }
@@ -357,7 +354,7 @@ public class FlinkCDCMulti {
         }
     }
 
-    private static void processCLIArgs(String[] args) throws IOException, ParseException {
+    private static void processCLIArgs(String[] args) throws ParseException {
         LOG.info(">>> [MAIN] ARGS: {}", Arrays.toString(args));
 
         Options options = new Options();
@@ -372,7 +369,7 @@ public class FlinkCDCMulti {
             cmd = parser.parse(options, args);
         } catch (ParseException e) {
             LOG.error(">>> [MAIN] INVALID CLI OPTIONS");
-            LOG.error(args);
+            LOG.error(String.join(", ", args));
             throw e;
         }
 
