@@ -1,5 +1,7 @@
 # FLINK-CDC-MULTI
 
+[中文](./README-zh.md)
+
 ## Introduction
 
 This tool is for ingesting data into a Data Lake in near-real-time. 
@@ -49,7 +51,7 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
     - (planned) Data partitioning based on event time
   - Snapshot only mode
   - Snapshot conditions
-    - (in-dev) Snapshot only a subset of data for data refilling
+    - (planned) Snapshot only a subset of data for data refilling
   - Snapshot + CDC mode
   - CDC only mode, i.e. starting from given binlog offset
   - Debug mode, using `--debug` to show verbose message during testing (turn off in production as this creates multiple logs for every binlog)
@@ -75,8 +77,8 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
     - Even if we could load it in the `plugins` directory, the configurations are not loaded this way, still need this at least for this version of EMR 
     - `sudo mv /usr/lib/flink/plugins/s3/*.jar /usr/lib/flink/lib`
     - `sudo rmdir /usr/lib/flink/plugins/s3`
-- Run using recommended application mode
-  - `flink run-application -t yarn-application -Dyarn.application.name=job-name ./flink-cdc-multi.jar`
+- Run using Per-Job mode
+  - `flink run -t yarn-per-job -Dyarn.application.name=job-name ./flink-cdc-multi.jar`
 - CLI Options
   - `--config s3://mybucket/myconfig.json` (can also be local for testing, or HDFS)
     - See [example-configs](/src/resources/example-configs) for examples
