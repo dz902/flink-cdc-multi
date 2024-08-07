@@ -32,6 +32,7 @@ import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.example.bucketassigners.DateBucketAssigner;
@@ -45,8 +46,6 @@ import org.example.streamers.MySQLStreamer;
 import org.example.streamers.Streamer;
 import org.example.utils.Thrower;
 import org.example.utils.Validator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
@@ -59,7 +58,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class FlinkCDCMulti {
-    private static final Logger LOG = LoggerFactory.getLogger("flink-cdc-multi");
+    private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private static final Configuration flinkConfig = GlobalConfiguration.loadConfiguration();
     private static String argConfig;
     private static String argName;
