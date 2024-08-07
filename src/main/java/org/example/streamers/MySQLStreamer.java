@@ -151,10 +151,8 @@ public class MySQLStreamer implements Streamer<String> {
 
         Properties debeziumProperties = new Properties();
         debeziumProperties.setProperty("bigint.unsigned.handling.mode","long");
-        debeziumProperties.setProperty("snapshot.fetch.size", "128");
-        debeziumProperties.setProperty("max.batch.size", "128"); // TODO: CONFIGURABLE
-        debeziumProperties.setProperty("max.queue.size", "256");
-        debeziumProperties.setProperty("min.row.count.to.stream.results", "256");
+        debeziumProperties.setProperty("scan.snapshot.fetch.size", "128");
+        debeziumProperties.setProperty("scan.incremental.snapshot.chunk.size", "128"); // TODO: CONFIGURABLE
         debeziumProperties.setProperty("decimal.handling.mode","string");
         debeziumProperties.setProperty("database.history.skip.unparseable.ddl", "false");
         debeziumProperties.setProperty("database.history.store.only.monitored.tables.ddl", "true");
