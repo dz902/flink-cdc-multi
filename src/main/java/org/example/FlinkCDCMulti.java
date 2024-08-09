@@ -159,7 +159,7 @@ public class FlinkCDCMulti {
         final ParameterTool params = ParameterTool.fromMap(paramsMap);
         env.getConfig().setGlobalJobParameters(params);
 
-        env.execute();
+        env.execute(jobName);
     }
 
     private static void configureOffset() throws IOException {
