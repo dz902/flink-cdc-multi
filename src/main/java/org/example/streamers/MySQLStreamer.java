@@ -46,6 +46,7 @@ public class MySQLStreamer implements Streamer<String> {
     private JSONObject snapshotConditions; // TODO: FOR REFILL DATA FROM A PERIOD
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
+    private String serverIdRange;
 
     public MySQLStreamer(JSONObject configJSON) {
         this.hostname = Validator.ensureNotEmpty("source.hostname", configJSON.getString("source.hostname"));
@@ -114,13 +115,24 @@ public class MySQLStreamer implements Streamer<String> {
         if (snapshotOnly) {
             LOG.info(">>> [MYSQL-STREAMER] SNAPSHOT ONLY MODE, STARTUP MODE CHANGED: {} -> initial", startupMode);
         }
+
+
+        this.serverIdRange = configJSON.getString("mysql.server.id.range");
+
+        if (StringUtils.isNullOrWhitespaceOnly(serverIdRange)
+            && !serverIdRange.matches("[1-9][0-9]*-[1-9][0-9]*")) {
+            Thrower.errAndThrow("MYSQL-STREAMER", "INVALID SERVER ID RANGE: " + serverIdRange);
+            return;
+        } else {
+            LOG.info(">>> [MYSQL-STREAMER] USING SERVER ID RANGE: {}", serverIdRange);
+        }
     }
 
     @Override
     public MySqlSource<String> getSource() {
         StartupOptions startupOptions;
 
-        LOG.info(">>> [MONGO-STREAMER] STARTUP MODE: {}", startupMode);
+        LOG.info(">>> [MYSQL-STREAMER] STARTUP MODE: {}", startupMode);
 
         switch (startupMode) {
             case "earliest":
@@ -159,6 +171,7 @@ public class MySQLStreamer implements Streamer<String> {
             .hostname(hostname)
             .port(port)
             .username(username)
+            .serverId(serverIdRange)
             .password(password)
             .databaseList(databaseName)
             .tableList(tableList)

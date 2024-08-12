@@ -20,5 +20,6 @@
   "table.name.map": {
     "dummy": "dummy_v20240713"
   },
-  "table.name.map.store.file.path": "s3://{bucket}/"
+  "table.name.map.store.file.path": "s3://{bucket}/",
+  "mysql.server.id.range": "5000-5005"
 }
