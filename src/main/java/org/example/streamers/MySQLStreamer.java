@@ -32,6 +32,8 @@ public class MySQLStreamer implements Streamer<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final String hostname;
     private final String databaseName;
+    private final int splitSize;
+    private final int fetchSize;
     private String[] tableArray;
     private String tableList;
     private final String username;
@@ -46,7 +48,7 @@ public class MySQLStreamer implements Streamer<String> {
     private JSONObject snapshotConditions; // TODO: FOR REFILL DATA FROM A PERIOD
     private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
-    private String serverIdRange;
+    private final String serverIdRange;
 
     public MySQLStreamer(JSONObject configJSON) {
         this.hostname = Validator.ensureNotEmpty("source.hostname", configJSON.getString("source.hostname"));
@@ -116,6 +118,8 @@ public class MySQLStreamer implements Streamer<String> {
             LOG.info(">>> [MYSQL-STREAMER] SNAPSHOT ONLY MODE, STARTUP MODE CHANGED: {} -> initial", startupMode);
         }
 
+        this.splitSize = Validator.withDefault(configJSON.getIntValue("mysql.split.size"), 4096);
+        this.fetchSize = Validator.withDefault(configJSON.getIntValue("mysql.fetch.size"), 1024);
 
         this.serverIdRange = configJSON.getString("mysql.server.id.range");
 
@@ -180,8 +184,8 @@ public class MySQLStreamer implements Streamer<String> {
             .deserializer(new MySQLDebeziumToJSONDeserializer(tagSchemaMap))
             .startupOptions(startupOptions)
             .includeSchemaChanges(true)
-            .fetchSize(128)
-            .splitSize(128)  // TODO: CONFIGURABLE
+            .fetchSize(fetchSize)
+            .splitSize(splitSize)  // TODO: CONFIGURABLE
             .debeziumProperties(debeziumProperties)
             .build();
     }

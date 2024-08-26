@@ -293,6 +293,8 @@ public class FlinkCDCMulti {
         // TODO: EXTRACT THIS TO UTILS
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault());
         String dateString = dateFormatter.format(Instant.ofEpochMilli(System.currentTimeMillis()));
+
+        // TODO: FIXED DATE
         String statusStoreFilePath = String.format("%s/dt=%s/%s", statusStorePath, dateString, UUID.randomUUID() + ".json");
 
         LOG.info(">>> [MAIN] CREATING STATUS STORE STREAM: {}", statusStorePath);

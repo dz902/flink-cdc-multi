@@ -21,5 +21,7 @@
     "dummy": "dummy_v20240713"
   },
   "table.name.map.store.file.path": "s3://{bucket}/",
-  "mysql.server.id.range": "5000-5005"
+  "mysql.server.id.range": "5000-5005",
+  "mysql.split.size": 1024,
+  "mysql.fetch.size": 1024
 }
