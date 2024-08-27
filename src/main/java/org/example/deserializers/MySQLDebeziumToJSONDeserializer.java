@@ -92,11 +92,11 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
         LOG.debug(">>> [AVRO-DESERIALIZER] DESERIALIZING ROW");
 
         String topic = sourceRecord.topic();
-        String[] topicSplits = topic.split("\\.");
+        String[] topicSplits = topic.split("\\.", 3);
         String databaseName = topicSplits[1];
         String tableName = topicSplits[2];
-        String sanitizedDatabaseName = databaseName.replace('-', '_');
-        String sanitizedTableName = tableName.replace('-', '_');
+        String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
+        String sanitizedTableName = Sanitizer.sanitize(tableName);
 
         String op = Envelope.operationFor(sourceRecord).toString();
         Struct record;

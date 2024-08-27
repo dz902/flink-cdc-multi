@@ -185,7 +185,7 @@ public class MySQLStreamer implements Streamer<String> {
             .startupOptions(startupOptions)
             .includeSchemaChanges(true)
             .fetchSize(fetchSize)
-            .splitSize(splitSize)  // TODO: CONFIGURABLE
+            .splitSize(splitSize)
             .debeziumProperties(debeziumProperties)
             .build();
     }
@@ -214,6 +214,13 @@ public class MySQLStreamer implements Streamer<String> {
                         sanitizedMappedTableName = Sanitizer.sanitize(mappedTableName);
                     }
                 }
+
+                LOG.info(
+                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", sanitizedDatabaseName, sanitizedTableName) ,
+                    (
+                        !sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : ""
+                    )
+                );
 
                 // TODO: MULTIPLE DB?
 
@@ -251,12 +258,6 @@ public class MySQLStreamer implements Streamer<String> {
                 final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
                 tagSchemaMap.put(sanitizedTableName, Tuple2.of(outputTag, avroSchema));
 
-                LOG.info(
-                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", sanitizedDatabaseName, sanitizedTableName) ,
-                    (
-                        !sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : ""
-                    )
-                );
                 LOG.info(String.valueOf(avroSchema));
             }
         } catch (SQLException e) {
