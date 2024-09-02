@@ -32,8 +32,15 @@ public class JSONToGenericRecordMapFunction extends RichMapFunction<String, Gene
         LOG.debug(">>> [JSON-TO-AVRO] CONVERT JSON STRING TO AVRO GENERIC RECORD");
         LOG.trace(value);
         LOG.trace(avroSchema);
-        DatumReader<GenericRecord> reader = new GenericDatumReader<>(avroSchema);
-        Decoder decoder = DecoderFactory.get().jsonDecoder(avroSchema, value);
-        return reader.read(null, decoder);
+
+        try {
+            DatumReader<GenericRecord> reader = new GenericDatumReader<>(avroSchema);
+            Decoder decoder = DecoderFactory.get().jsonDecoder(avroSchema, value);
+            return reader.read(null, decoder);
+        } catch (Exception e) {
+            LOG.info(value);
+            LOG.info(avroSchema);
+            throw e;
+        }
     }
 }
