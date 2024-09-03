@@ -52,18 +52,23 @@ public abstract class AVROUtils {
     }
 
     public static Schema getAvroSchemaFrom(String dataType) {
-        switch (dataType.toUpperCase()) {
+        String convertedDataType = dataType
+            .toUpperCase()
+            .replaceAll("^\\s*([A-Z]+)\\s*(?:\\([0-9]+\\))?.*$", "$1");
+        switch (convertedDataType) {
             case "INT":
             case "TINYINT":
             case "SMALLINT":
             case "MEDIUMINT":
             case "DATE":
+            case "YEAR":
                 return Schema.create(Schema.Type.INT);
             case "BIGINT":
             case "DATETIME":
             case "TIME":
                 return Schema.create(Schema.Type.LONG);
             case "FLOAT":
+            case "REAL":
             case "DOUBLE":
                 return Schema.create(Schema.Type.DOUBLE);
             case "BIT":
