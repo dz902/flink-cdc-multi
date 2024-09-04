@@ -184,6 +184,7 @@ public class MySQLStreamer implements Streamer<String> {
             .deserializer(new MySQLDebeziumToJSONDeserializer(tagSchemaMap))
             .startupOptions(startupOptions)
             .includeSchemaChanges(true)
+            .distributionFactorUpper(10)
             .fetchSize(fetchSize)
             .splitSize(splitSize)
             .debeziumProperties(debeziumProperties)
