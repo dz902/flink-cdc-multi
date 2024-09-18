@@ -410,6 +410,13 @@ public class FlinkCDCMulti {
 
         env.configure(flinkConfig);
         env.enableCheckpointing(checkpointInterval * 1000L);
+
+        // SET MIN PAUSE TO 0.75x of CHECKPOINT INTERVAL TO PREVENT HANGING CHECKPOINT
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(checkpointInterval * 1000L * 3 / 4);
+
+        // ALLOW 2 FAILURES
+        env.getCheckpointConfig().setTolerableCheckpointFailureNumber(2);
+
         env.getCheckpointConfig().setExternalizedCheckpointCleanup(
             CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION
         );
