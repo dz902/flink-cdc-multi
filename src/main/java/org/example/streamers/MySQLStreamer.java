@@ -311,7 +311,7 @@ public class MySQLStreamer implements Streamer<String> {
             .process(new DelayedStopSignalProcessFunction(snapshotConfig))
             .setParallelism(1)
             .keyBy(new NullByteKeySelector<>())
-            .process(new SideInputProcessFunction(tagSchemaMap))
+            .process(new SideInputProcessFunction(tagSchemaStringMap))
             .setParallelism(1);
     }
 }
