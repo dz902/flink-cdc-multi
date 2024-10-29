@@ -5,12 +5,9 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.ververica.cdc.debezium.DebeziumDeserializationSchema;
 import io.debezium.data.Envelope;
-import org.apache.avro.Schema;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
-import org.apache.flink.util.OutputTag;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.source.SourceRecord;
@@ -24,11 +21,6 @@ import java.util.Map;
 
 public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
-    private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
-
-    public MySQLDebeziumToJSONDeserializer(Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap) {
-        this.tagSchemaMap = tagSchemaMap;
-    }
 
     @Override
     public void deserialize(SourceRecord sourceRecord, Collector<String> collector) throws Exception {

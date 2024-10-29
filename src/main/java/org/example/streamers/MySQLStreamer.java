@@ -181,7 +181,7 @@ public class MySQLStreamer implements Streamer<String> {
             .tableList(tableList)
             .serverTimeZone(timezone)
             .scanNewlyAddedTableEnabled(true)
-            .deserializer(new MySQLDebeziumToJSONDeserializer(tagSchemaMap))
+            .deserializer(new MySQLDebeziumToJSONDeserializer())
             .startupOptions(startupOptions)
             .includeSchemaChanges(true)
             .distributionFactorUpper(10)
