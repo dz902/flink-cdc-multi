@@ -46,7 +46,6 @@ public class MySQLStreamer implements Streamer<String> {
     private int offsetPos;
     private final boolean snapshotOnly; // TODO: SNAPSHOT ONLY MODE
     private JSONObject snapshotConditions; // TODO: FOR REFILL DATA FROM A PERIOD
-    private Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap;
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
     private final String serverIdRange;
 
@@ -290,7 +289,6 @@ public class MySQLStreamer implements Streamer<String> {
         );
         LOG.info(String.valueOf(ddlAvroSchema));
 
-        this.tagSchemaMap = tagSchemaMap;
         this.tagSchemaStringMap = tagSchemaMap.entrySet().stream()
             .collect(Collectors.toMap(
                 Map.Entry::getKey,
