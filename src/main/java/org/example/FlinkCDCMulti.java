@@ -446,7 +446,7 @@ public class FlinkCDCMulti {
             try {
                 configFS = configPath.getFileSystem();
             } catch (IOException e) {
-                LOG.error(">>> [MAIN] INVALID CONFIG PATH: {}", argConfig);
+                LOG.error(">>> [MAIN] INVALID CONFIG: {}", argConfig);
                 throw e;
             }
 
