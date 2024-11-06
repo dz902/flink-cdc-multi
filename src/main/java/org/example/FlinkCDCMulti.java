@@ -197,6 +197,7 @@ public class FlinkCDCMulti {
         try {
             storeFS = storeFilePath.getFileSystem();
         } catch (IOException e) {
+            LOG.error(e);
             Thrower.errAndThrow(
                 "MAIN",
                 String.format("INVALID OFFSET STORE PATH: %s", offsetStoreFilePath)
