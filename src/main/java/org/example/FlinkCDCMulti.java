@@ -76,7 +76,7 @@ public class FlinkCDCMulti {
     private static Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
 
     public static void main(String[] args) throws Exception {
-        LOG.info(">>> [MAIN] VERSION: {}", "v20240726-1557");
+        LOG.info(">>> [MAIN] VERSION: {}", "v20241106-1305");
 
         createFlinkStreamingEnv();
 

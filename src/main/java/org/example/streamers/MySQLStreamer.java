@@ -195,6 +195,8 @@ public class MySQLStreamer implements Streamer<String> {
         final String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
         Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap = new HashMap<>();
 
+        LOG.info(String.format(">>> [MYSQL-STREAMER] CONNECTING TO: %s@%s:%s", username, hostname, port));
+
         try (Connection connection = DriverManager.getConnection(String.format("jdbc:mysql://%s:%d?tinyInt1isBit=false", hostname, port), username, password)) {
             DatabaseMetaData metaData = connection.getMetaData();
             ResultSet tables = metaData.getTables(databaseName, null, "%", new String[]{"TABLE"});
@@ -261,7 +263,10 @@ public class MySQLStreamer implements Streamer<String> {
                 LOG.info(String.valueOf(avroSchema));
             }
         } catch (SQLException e) {
-            Thrower.errAndThrow("MYSQL-STREAM", ">>> [MAIN] UNABLE TO CONNECT TO SOURCE, EXCEPTION:");
+            Thrower.errAndThrow(
+                "MYSQL-STREAM",
+                String.format(">>> [MAIN] UNABLE TO CONNECT TO SOURCE, EXCEPTION: %s", e.getMessage())
+            );
         }
 
         // <<<
