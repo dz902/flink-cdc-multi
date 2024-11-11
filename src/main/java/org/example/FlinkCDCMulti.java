@@ -17,8 +17,6 @@ import org.apache.flink.connector.file.sink.FileSink;
 import org.apache.flink.core.fs.FSDataInputStream;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
-import org.apache.flink.core.plugin.PluginManager;
-import org.apache.flink.core.plugin.PluginUtils;
 import org.apache.flink.formats.avro.typeutils.GenericRecordAvroTypeInfo;
 import org.apache.flink.formats.parquet.ParquetWriterFactory;
 import org.apache.flink.formats.parquet.avro.AvroParquetWriters;
@@ -498,7 +496,7 @@ public class FlinkCDCMulti {
     private static void initializeFileSystem() {
         // YOU MUST MANUALLY LOAD CONFIG FOR S3 REGION TO TAKE EFFECT
         // TODO: FIND OUT WHY
-        PluginManager pluginManager = PluginUtils.createPluginManagerFromRootFolder(flinkConfig);
-        FileSystem.initialize(flinkConfig, pluginManager);
+        // PluginManager pluginManager = PluginUtils.createPluginManagerFromRootFolder(flinkConfig);
+        // FileSystem.initialize(flinkConfig, pluginManager);
     }
 }
