@@ -76,6 +76,31 @@ public class FlinkCDCMulti {
     public static void main(String[] args) throws Exception {
         LOG.info(">>> [MAIN] VERSION: {}", "v20241106-1305");
 
+        try {
+            // Load a class
+            Class<?> clazz = Class.forName("org.apache.avro.Schema");
+
+            // Get the class loader of the loaded class
+            ClassLoader classLoader = clazz.getClassLoader();
+
+            // Print the class name and class loader
+            LOG.error("Class: " + clazz.getName());
+            LOG.error("Loaded by: " + classLoader);
+
+            // If the class loader is a URLClassLoader, print its URLs
+            if (classLoader instanceof java.net.URLClassLoader) {
+                java.net.URL[] urls = ((java.net.URLClassLoader) classLoader).getURLs();
+                for (java.net.URL url : urls) {
+                    LOG.error("Class loaded from: " + url.getPath());
+                }
+            } else {
+                LOG.error("Class loader is not a URLClassLoader.");
+            }
+
+        } catch (ClassNotFoundException e) {
+            LOG.error(e.getStackTrace());
+        }
+
         createFlinkStreamingEnv();
 
         initializeFileSystem();

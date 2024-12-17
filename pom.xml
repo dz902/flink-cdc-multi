@@ -141,11 +141,11 @@ under the License.
 			<version>${flink.version}</version>
 			<scope>provided</scope>
 		</dependency>
-<!--		<dependency>-->
-<!--			<groupId>org.apache.parquet</groupId>-->
-<!--			<artifactId>parquet-avro</artifactId>-->
-<!--			<version>${parquet.avro.version}</version>-->
-<!--		</dependency>-->
+		<dependency>
+			<groupId>org.apache.parquet</groupId>
+			<artifactId>parquet-avro</artifactId>
+			<version>${parquet.avro.version}</version>
+		</dependency>
 
 		<!-- Example:
 

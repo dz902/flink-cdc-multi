@@ -43,10 +43,6 @@ public class MongoDBStreamer implements Streamer<String> {
     private boolean compatibilityMode = false;
 
     public MongoDBStreamer(JSONObject configJSON) {
-        // TODO: SUPPORT DB LEVEL CDC FOR MONGODB v4+
-        LOG.warn(">>> [MONGODB-STREAMER] CURRENTLY ONLY SINGLE DB AND COLLECTION IS SUPPORTED");
-        LOG.warn(">>> [MONGODB-STREAMER] BECAUSE THIS TOOL IS DEVELOPED AGAINST MONGO V3.6");
-
         this.hosts = Validator.ensureNotEmpty("source.hosts", configJSON.getString("source.hosts"));
         this.databaseName = Validator.ensureNotEmpty("source.database.name", configJSON.getString("source.database.name"));
         this.collectionFullName = Validator.ensureNotEmpty("source.collection.name", configJSON.getString("source.collection.name"));

@@ -44,7 +44,9 @@ public class MySQLStreamer implements Streamer<String> {
     private String offsetFile;
     private String startupMode;
     private int offsetPos;
-    private final boolean snapshotOnly; // TODO: SNAPSHOT ONLY MODE
+    private final boolean snapshotOnly; // TODO: UPGRADE TO NATIVE v3.1+
+    private final String[] snapshotOverridesTableList;
+    private final Map<String, String> snapshotOverridesStatements;
     private JSONObject snapshotConditions; // TODO: FOR REFILL DATA FROM A PERIOD
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
     private final String serverIdRange;
@@ -80,6 +82,30 @@ public class MySQLStreamer implements Streamer<String> {
         this.password = Validator.ensureNotEmpty("source.password", configJSON.getString("source.password"));
         this.timezone = Validator.withDefault(configJSON.getString("source.timezone"), "UTC");
         this.tableNameMap = configJSON.getJSONObject("table.name.map");
+
+        String snapshotOverridesTablesString = configJSON.getString("snapshot.select.statement.overrides");
+
+        if (!StringUtils.isNullOrWhitespaceOnly(snapshotOverridesTablesString)) {
+            LOG.info("[MYSQL-STREAMER] SNAPSHOT OVERRIDES: {}", snapshotOverridesTablesString);
+            this.snapshotOverridesTableList = snapshotOverridesTablesString.split(",");
+            this.snapshotOverridesStatements = new HashMap<String, String>();
+
+            for (String tableName : this.snapshotOverridesTableList) {
+                LOG.info("[MYSQL-STREAMER] FIND OVERRIDE STATEMENT FOR: {}", tableName);
+
+                tableName = tableName.trim();
+                String statementConfigKey = "snapshot.select.statement.overrides." + tableName;
+                String statement = Validator.ensureNotEmpty(
+                    statementConfigKey,
+                    configJSON.getString(statementConfigKey)
+                );
+
+                snapshotOverridesStatements.put(tableName, statement);
+            }
+        } else {
+            this.snapshotOverridesTableList = null;
+            this.snapshotOverridesStatements = null;
+        }
 
         String offsetValue = configJSON.getString("offset.value");
 
@@ -169,6 +195,33 @@ public class MySQLStreamer implements Streamer<String> {
         debeziumProperties.setProperty("decimal.handling.mode","string");
         debeziumProperties.setProperty("database.history.skip.unparseable.ddl", "false");
         debeziumProperties.setProperty("database.history.store.only.monitored.tables.ddl", "true");
+        debeziumProperties.setProperty("database.history.store.only.monitored.tables.ddl", "true");
+
+        // CUSTOM SQL
+
+        if (snapshotOverridesTableList != null) {
+            debeziumProperties.setProperty(
+                "scan.incremental.snapshot.enabled",
+                "false"
+            );
+
+            String tableString = String.join(",", snapshotOverridesTableList);
+            debeziumProperties.setProperty(
+                "snapshot.select.statement.overrides",
+                tableString
+            );
+            LOG.info("[MYSQL-STREAMER] SET SNAPSHOT OVERRIDES TABLES: {}", tableString);
+
+            for (Map.Entry<String, String> entry : snapshotOverridesStatements.entrySet()) {
+                String key = entry.getKey();
+                String value = entry.getValue();
+                debeziumProperties.setProperty(
+                    "snapshot.select.statement.overrides."+key,
+                    value
+                );
+                LOG.info("[MYSQL-STREAMER] SET OVERRIDE STATEMENT FOR TABLE: {}", key);
+            }
+        }
 
         return MySqlSource.<String>builder()
             .hostname(hostname)
