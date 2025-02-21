@@ -37,10 +37,12 @@ import org.example.bucketassigners.DateBucketAssigner;
 import org.example.processfunctions.common.StatusStoreProcessFunction;
 import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
 import org.example.processfunctions.mysql.BinlogOffsetStoreProcessFunction;
+import org.example.processfunctions.postgres.LsnOffsetStoreProcessFunction;
 import org.example.richmapfunctions.JSONToGenericRecordMapFunction;
 import org.example.sinkfunctions.SingleFileSinkFunction;
 import org.example.streamers.MongoDBStreamer;
 import org.example.streamers.MySQLStreamer;
+import org.example.streamers.PostgresStreamer;
 import org.example.streamers.Streamer;
 import org.example.utils.Thrower;
 import org.example.utils.Validator;
@@ -271,6 +273,9 @@ public class FlinkCDCMulti {
             case "mysql":
                 streamer = new MySQLStreamer(configJSON);
                 break;
+            case "postgres":
+                streamer = new PostgresStreamer(configJSON);
+                break;
             default:
                 String msg = String.format("UNSUPPORTED SOURCE TYPE: %s", sourceType);
                 LOG.error(">>> [MAIN] {}", msg);
@@ -289,6 +294,9 @@ public class FlinkCDCMulti {
         switch (sourceType) {
             case "mysql":
                 offsetFunc = new BinlogOffsetStoreProcessFunction();
+                break;
+            case "postgres":
+                offsetFunc = new LsnOffsetStoreProcessFunction();
                 break;
             case "mongodb":
                 offsetFunc = new TimestampOffsetStoreProcessFunction();

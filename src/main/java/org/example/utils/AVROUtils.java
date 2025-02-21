@@ -54,7 +54,7 @@ public abstract class AVROUtils {
     public static Schema getAvroSchemaFrom(String dataType) {
         String dataTypeUpperCased = dataType.toUpperCase();
         String convertedDataType = dataTypeUpperCased
-            .replaceAll("^\\s*([A-Z]+)\\s*(?:\\([0-9]+\\))?.*$", "$1");
+            .replaceAll("^\\s*([A-Z]+[248]?)\\s*(?:\\([0-9]+\\))?.*$", "$1");
         boolean isUnsigned = dataTypeUpperCased
             .contains("UNSIGNED");
 
@@ -62,16 +62,20 @@ public abstract class AVROUtils {
             case "TINYINT":
             case "SMALLINT":
             case "MEDIUMINT":
+            case "INT2":
             case "DATE":
             case "YEAR":
                 return Schema.create(Schema.Type.INT);
             case "INT":
+            case "INTEGER":
+            case "INT4":
                 if (isUnsigned) {
                     return Schema.create(Schema.Type.LONG);
                 } else {
                     return Schema.create(Schema.Type.INT);
                 }
             case "BIGINT":
+            case "INT8":
             case "DATETIME":
             case "TIME":
                 return Schema.create(Schema.Type.LONG);
