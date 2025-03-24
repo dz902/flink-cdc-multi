@@ -16,7 +16,6 @@ import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.example.utils.AVROUtils;
 import org.example.utils.JSONUtils;
 import org.example.utils.Sanitizer;
 import org.example.utils.Thrower;
@@ -93,7 +92,20 @@ public class MongoDBDebeziumToJSONDeserializer implements DebeziumDeserializatio
 
         for (String fieldName : recordObject.keySet()) {
             String sanitizedFieldName = fieldName.replace('-', '_');
+
             Object v = recordObject.get(fieldName);
+            JSONObject complexObject = recordObject.getJSONObject(fieldName);
+            if (complexObject != null) {
+                Object innerObj = complexObject.get("$numberLong");
+                if (innerObj != null) {
+                    v = innerObj;
+                }
+
+                innerObj = complexObject.get("$date");
+                if (innerObj != null) {
+                    v = innerObj;
+                }
+            }
 
             if (sanitizedFieldName.equals("_id")) {
                 sanitizedRecordObject.put(sanitizedFieldName, v);
