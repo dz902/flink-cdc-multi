@@ -20,9 +20,7 @@ import org.example.utils.JSONUtils;
 import org.example.utils.Sanitizer;
 import org.example.utils.Thrower;
 
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class MongoDBDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
@@ -94,17 +92,22 @@ public class MongoDBDebeziumToJSONDeserializer implements DebeziumDeserializatio
             String sanitizedFieldName = fieldName.replace('-', '_');
 
             Object v = recordObject.get(fieldName);
-            JSONObject complexObject = recordObject.getJSONObject(fieldName);
-            if (complexObject != null) {
-                Object innerObj = complexObject.get("$numberLong");
-                if (innerObj != null) {
-                    v = innerObj;
-                }
 
-                innerObj = complexObject.get("$date");
-                if (innerObj != null) {
-                    v = innerObj;
+            try {
+                JSONObject complexObject = recordObject.getJSONObject(fieldName);
+                if (complexObject != null) {
+                    List<String> formatKeys = Arrays.asList("$numberLong", "$date", "$oid", "$numberDecimal", "$numberDouble", "$timestamp");
+                    for (String k : formatKeys) {
+                        Object innerObj = complexObject.get(k);
+
+                        if (innerObj != null) {
+                            v = k == "$oid" ? JSONObject.toJSONString(innerObj) : innerObj;
+                            break;  // Stop after finding the first match
+                        }
+                    }
                 }
+            } catch (JSONException e) {
+
             }
 
             if (sanitizedFieldName.equals("_id")) {
