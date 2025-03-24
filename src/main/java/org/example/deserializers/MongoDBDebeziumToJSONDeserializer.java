@@ -100,28 +100,32 @@ public class MongoDBDebeziumToJSONDeserializer implements DebeziumDeserializatio
                 continue;
             }
 
-            JSONObject valueObject = new JSONObject();
+            //JSONObject valueObject = new JSONObject();
 
             if ("top-level-string".equals(mode)) {
-                if (v != null) {
-                    valueObject.put("string", JSONObject.toJSONString(v));
-                } else {
-                    valueObject.put("string", null);
-                }
+                // if (v != null) {
+                //     valueObject.put("string", JSONObject.toJSONString(v));
+                // } else {
+                //     valueObject.put("string", null);
+                // }
 
-                sanitizedRecordObject.put(sanitizedFieldName, valueObject);
+                // sanitizedRecordObject.put(sanitizedFieldName, valueObject);
+
+                sanitizedRecordObject.put(sanitizedFieldName, v);
             } else {
-                if (v != null) {
-                    if (v.getClass() == JSONObject.class) {
-                        valueObject.put(AVROUtils.getAvroSchemaFrom(v.getClass()).getName(), JSON.toJSONString(v));
-                    } else {
-                        valueObject.put(AVROUtils.getAvroSchemaFrom(v.getClass()).getName(), v);
-                    }
+                // if (v != null) {
+                //     if (v.getClass() == JSONObject.class) {
+                //         valueObject.put(AVROUtils.getAvroSchemaFrom(v.getClass()).getName(), JSON.toJSONString(v));
+                //     } else {
+                //         valueObject.put(AVROUtils.getAvroSchemaFrom(v.getClass()).getName(), v);
+                //     }
 
-                    sanitizedRecordObject.put(sanitizedFieldName, valueObject);
-                } else {
-                    sanitizedRecordObject.put(sanitizedFieldName, null);
-                }
+                //     sanitizedRecordObject.put(sanitizedFieldName, valueObject);
+                // } else {
+                //     sanitizedRecordObject.put(sanitizedFieldName, null);
+                // }
+
+                sanitizedRecordObject.put(sanitizedFieldName, v);
             }
         }
 

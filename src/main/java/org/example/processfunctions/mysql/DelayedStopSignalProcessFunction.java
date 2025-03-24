@@ -86,7 +86,7 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
                 LOG.info(">>> [STOP-SIGNAL-SENDER] DDL-TRUNCATE-TABLE FOUND, SHOULD USE SNAPSHOT-ONLY MODE");
             }
 
-            boolean nonStructuralStatementFound = ddlStatement.matches("(?i)(" +
+            boolean nonStructuralStatementFound = ddlStatement.matches("(?i)(?s)(" +
                 "CREATE\\s+INDEX.*|" +
                 "DROP\\s+INDEX.*|" +
                 "ALTER\\s+TABLE.*ADD\\s+INDEX.*|" +
