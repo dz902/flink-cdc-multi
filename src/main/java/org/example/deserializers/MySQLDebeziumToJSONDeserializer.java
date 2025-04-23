@@ -74,7 +74,7 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
             ddlObject.put("_ddl_tbl", sanitizedTableName);
             ddlObject.put("_binlog_file", binlogFile);
             ddlObject.put("_binlog_pos_end", binlogPos);
-            ddlObject.put("_ts", valueSource.getInt64("ts_ms"));
+            ddlObject.put("_ts", value.getInt64("ts_ms"));
 
             collector.collect(JSON.toJSONString(ddlObject, SerializerFeature.WriteMapNullValue));
 
@@ -143,13 +143,14 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
         recordObject.put("_tbl", sanitizedTableName);
         recordObject.put("_op", op);
 
-        long ts = valueSource.getInt64("ts_ms");
+        long ts = value.getInt64("ts_ms");
         ts = ts < 1 ? System.currentTimeMillis() : ts;
         recordObject.put("_ts", ts);
 
         Map<String, ?> sourceOffset = sourceRecord.sourceOffset();
         String binlogFile = sourceOffset.get("file").toString();
         String binlogPos = sourceOffset.get("pos").toString();
+        Long binlogPosInternal = valueSource.getInt64("pos");
 
         // EXTRA DATA, ONLY FOR BINLOG OFFSET WRITE BACK
         // NOTE: WE HAVE TO USE STARTING BINLOG OFFSET UNLIKE DDL
@@ -157,6 +158,7 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
 
         recordObject.put("_binlog_file", binlogFile);
         recordObject.put("_binlog_pos_end", binlogPos);
+        recordObject.put("_binlog_pos_internal", binlogPosInternal);
 
         collector.collect(JSON.toJSONString(recordObject, SerializerFeature.WriteMapNullValue));
     }
