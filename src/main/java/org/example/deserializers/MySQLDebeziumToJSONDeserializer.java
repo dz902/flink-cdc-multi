@@ -150,6 +150,7 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
         Map<String, ?> sourceOffset = sourceRecord.sourceOffset();
         String binlogFile = sourceOffset.get("file").toString();
         String binlogPos = sourceOffset.get("pos").toString();
+        String binlogFileInternal = valueSource.getString("file");
         Long binlogPosInternal = valueSource.getInt64("pos");
 
         // EXTRA DATA, ONLY FOR BINLOG OFFSET WRITE BACK
@@ -158,6 +159,7 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
 
         recordObject.put("_binlog_file", binlogFile);
         recordObject.put("_binlog_pos_end", binlogPos);
+        recordObject.put("_binlog_file_internal", binlogFileInternal);
         recordObject.put("_binlog_pos_internal", binlogPosInternal);
 
         collector.collect(JSON.toJSONString(recordObject, SerializerFeature.WriteMapNullValue));

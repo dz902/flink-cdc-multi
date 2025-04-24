@@ -306,6 +306,7 @@ public class MySQLStreamer implements Streamer<String> {
 
                 AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_op", "VARCHAR", false);
                 AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_ts", "BIGINT", false);
+                AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_binlog_file_internal", "VARCHAR", false);
                 AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_binlog_pos_internal", "BIGINT", false);
 
                 Schema avroSchema = fieldAssembler.endRecord();
