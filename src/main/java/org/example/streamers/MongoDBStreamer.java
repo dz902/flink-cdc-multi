@@ -276,6 +276,7 @@ public class MongoDBStreamer implements Streamer<String> {
 
             AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_op", String.class, false);
             AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_ts", Long.class, false);
+            AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_txn_op_index", String.class, false);
 
             final Schema avroSchema = fieldAssembler.endRecord();
 

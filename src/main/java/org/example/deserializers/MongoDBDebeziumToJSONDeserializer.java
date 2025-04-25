@@ -17,6 +17,7 @@ import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.example.utils.JSONUtils;
+import org.example.utils.ResumeTokenDecoder;
 import org.example.utils.Sanitizer;
 import org.example.utils.Thrower;
 
@@ -47,6 +48,24 @@ public class MongoDBDebeziumToJSONDeserializer implements DebeziumDeserializatio
         Struct key = (Struct) sourceRecord.key();
         Struct value = (Struct) sourceRecord.value();
         Struct valueNS = value.getStruct("ns");
+        JSONObject offsetObject = JSONUtils.objectToJSONObject(sourceRecord.sourceOffset());
+        String offset = "";
+
+        try {
+            JSONObject offsetIdObject = offsetObject.getJSONObject("_id");
+
+            if (offsetIdObject != null) {
+                offset = offsetIdObject.getString("_data");
+
+                if (offset != null) {
+                    JSONObject resumeTokenObject = JSONUtils.objectToJSONObject(ResumeTokenDecoder.decodeResumeToken(offset));
+                    LOG.error(resumeTokenObject.toJSONString());
+                    offset = resumeTokenObject.getString("txnOpIndex");
+                }
+            }
+        } catch (JSONException e) {
+            LOG.error(">>> [AVRO-DESERIALIZER] ERROR FINDING OFFSET: {}", e.getMessage());
+        }
 
         LOG.debug(">>> [AVRO-DESERIALIZER] DESERIALIZING ROW");
 
@@ -177,6 +196,7 @@ public class MongoDBDebeziumToJSONDeserializer implements DebeziumDeserializatio
         sanitizedRecordObject.put("_coll", sanitizedCollectionName);
         sanitizedRecordObject.put("_op", op);
         sanitizedRecordObject.put("_ts", value.getInt64("ts_ms"));
+        sanitizedRecordObject.put("_txn_op_index", offset);
 
         if ("top-level-string".equals(mode)) {
             // TODO: UGLY
