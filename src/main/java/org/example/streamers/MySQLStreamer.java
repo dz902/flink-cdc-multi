@@ -41,6 +41,7 @@ public class MySQLStreamer implements Streamer<String> {
     private final String timezone;
     private final int port;
     private final JSONObject tableNameMap;
+    private final JSONObject databaseNameMap;
     private String offsetFile;
     private String startupMode;
     private int offsetPos;
@@ -57,6 +58,7 @@ public class MySQLStreamer implements Streamer<String> {
             Validator.ensureNotEmpty("source.port", configJSON.getString("source.port"))
         );
         this.databaseName = Validator.ensureNotEmpty("source.database.name", configJSON.getString("source.database.name"));
+        this.databaseNameMap = configJSON.getJSONObject("database.name.map");
 
         String allTables = databaseName+".*";
         this.tableList = Validator.withDefault(configJSON.getString("source.table.list"), allTables);
@@ -254,8 +256,7 @@ public class MySQLStreamer implements Streamer<String> {
             DatabaseMetaData metaData = connection.getMetaData();
             ResultSet tables = metaData.getTables(databaseName, null, "%", new String[]{"TABLE"});
             while (tables.next()) {
-                String tableName = tables
-                    .getString(3);
+                String tableName = tables.getString(3);
                 String sanitizedTableName = Sanitizer.sanitize(tableName);
                 if (!tableName.equals(sanitizedTableName)) {
                     LOG.warn(">>> [MYSQL-STREAMER] TABLE NAME IS SANITIZED: {} -> {}", tableName, sanitizedTableName);
@@ -270,14 +271,20 @@ public class MySQLStreamer implements Streamer<String> {
                     }
                 }
 
-                LOG.info(
-                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", sanitizedDatabaseName, sanitizedTableName) ,
-                    (
-                        !sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : ""
-                    )
-                );
+                String mappedDatabaseName = databaseName;
+                String sanitizedMappedDatabaseName = sanitizedDatabaseName;
+                if (databaseNameMap != null) {
+                    mappedDatabaseName = databaseNameMap.getString(databaseName);
+                    if (mappedDatabaseName != null) {
+                        sanitizedMappedDatabaseName = Sanitizer.sanitize(mappedDatabaseName);
+                    }
+                }
 
-                // TODO: MULTIPLE DB?
+                LOG.info(
+                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", 
+                    String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedTableName),
+                    (!sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : "")
+                );
 
                 ResultSet columns = metaData.getColumns(databaseName, null, tableName, "%");
 
@@ -311,7 +318,7 @@ public class MySQLStreamer implements Streamer<String> {
 
                 Schema avroSchema = fieldAssembler.endRecord();
 
-                final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedMappedTableName);
+                final String outputTagID = String.format("%s__%s", sanitizedMappedDatabaseName, sanitizedTableName);
                 final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
                 tagSchemaMap.put(sanitizedTableName, Tuple2.of(outputTag, avroSchema));
 

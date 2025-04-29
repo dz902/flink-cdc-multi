@@ -17,6 +17,9 @@
     "file": "mysql-bin.000003",
     "pos": 43650
   },
+  "database.name.map": {
+    "test": "test_prod"
+  },
   "table.name.map": {
     "dummy": "dummy_v20240713"
   },

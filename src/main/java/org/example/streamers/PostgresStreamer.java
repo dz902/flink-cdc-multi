@@ -42,6 +42,7 @@ public class PostgresStreamer implements Streamer<String> {
     private final String password;
     private final int port;
     private final JSONObject tableNameMap;
+    private final JSONObject databaseNameMap;
     private String offsetFile;
     private String startupMode;
     private int offsetPos;
@@ -56,6 +57,7 @@ public class PostgresStreamer implements Streamer<String> {
         );
         this.databaseName = Validator.ensureNotEmpty("source.database.name", configJSON.getString("source.database.name"));
         this.schemaName = Validator.ensureNotEmpty("source.schema.name", configJSON.getString("source.schema.name"));
+        this.databaseNameMap = configJSON.getJSONObject("database.name.map");
 
         String allTables = schemaName+".*";
         this.tableList = Validator.withDefault(configJSON.getString("source.table.list"), allTables);
@@ -209,8 +211,17 @@ public class PostgresStreamer implements Streamer<String> {
                     }
                 }
 
+                String mappedDatabaseName = databaseName;
+                String sanitizedMappedDatabaseName = sanitizedDatabaseName;
+                if (databaseNameMap != null) {
+                    mappedDatabaseName = databaseNameMap.getString(databaseName);
+                    if (mappedDatabaseName != null) {
+                        sanitizedMappedDatabaseName = Sanitizer.sanitize(mappedDatabaseName);
+                    }
+                }
+
                 LOG.info(
-                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", sanitizedDatabaseName, sanitizedTableName) ,
+                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedTableName) ,
                     (
                         !sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : ""
                     )
@@ -248,7 +259,7 @@ public class PostgresStreamer implements Streamer<String> {
 
                 Schema avroSchema = fieldAssembler.endRecord();
 
-                final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedMappedTableName);
+                final String outputTagID = String.format("%s__%s", sanitizedMappedDatabaseName, sanitizedMappedTableName);
                 final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
                 tagSchemaMap.put(sanitizedTableName, Tuple2.of(outputTag, avroSchema));
 
