@@ -74,7 +74,17 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
             ddlObject.put("_ddl_tbl", sanitizedTableName);
             ddlObject.put("_binlog_file", binlogFile);
             ddlObject.put("_binlog_pos_end", binlogPos);
-            ddlObject.put("_ts", value.getInt64("ts_ms"));
+
+            long ts = -1;
+
+            try {
+                ts = value.getInt64("ts_ms");
+            } catch (Exception e) {
+                LOG.error(">>> [AVRO-DESERIALIZER] UNABLE TO DECODE TS_MS: {}", sourceRecord);
+                throw e;
+            }
+
+            ddlObject.put("_ts", ts);
 
             collector.collect(JSON.toJSONString(ddlObject, SerializerFeature.WriteMapNullValue));
 
@@ -143,7 +153,15 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
         recordObject.put("_tbl", sanitizedTableName);
         recordObject.put("_op", op);
 
-        long ts = value.getInt64("ts_ms");
+        long ts = -1;
+
+        try {
+            ts = value.getInt64("ts_ms");
+        } catch (Exception e) {
+            LOG.error(">>> [AVRO-DESERIALIZER] UNABLE TO DECODE TS_MS: {}", sourceRecord);
+            throw e;
+        }
+
         ts = ts < 1 ? System.currentTimeMillis() : ts;
         recordObject.put("_ts", ts);
 
