@@ -13,5 +13,8 @@
   "checkpoint.interval": 10,
   "checkpoint.storage": "filesystem",
   "checkpoint.directory": "s3://{bucket}/checkpoints",
-  "offset.store.path": "s3://{bucket}/offsets"
+  "offset.store.path": "s3://{bucket}/offsets",
+  "collection.name.map": {
+    "my_coll": "my_coll_v20240713"
+  }
 }

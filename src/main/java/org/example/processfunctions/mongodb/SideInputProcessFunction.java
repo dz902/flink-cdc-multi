@@ -34,8 +34,7 @@ public class SideInputProcessFunction extends KeyedProcessFunction<Byte, String,
         out.collect(value);
 
         JSONObject valueJSONObject = JSONObject.parseObject(value);
-        String sanitizedCollectionName = valueJSONObject
-            .getString("_coll");
+        String sanitizedCollectionName = valueJSONObject.getString("_coll");
         valueJSONObject.remove("_coll");
         valueJSONObject.remove("_db");
 
@@ -47,7 +46,7 @@ public class SideInputProcessFunction extends KeyedProcessFunction<Byte, String,
             LOG.trace(filteredValueString);
             ctx.output(tagSchemaTuple.f0, filteredValueString);
         } else {
-            Thrower.errAndThrow("SIDE-INPUT-FUNC",String.format("UNKNOWN COLLECTION: %s", sanitizedCollectionName));
+            Thrower.errAndThrow("SIDE-INPUT-FUNC", String.format("UNKNOWN COLLECTION: %s", sanitizedCollectionName));
         }
     }
 }

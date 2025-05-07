@@ -50,6 +50,7 @@ public class MongoDBStreamer implements Streamer<String> {
         this.password = configJSON.getString("source.password");
         this.offsetValue = configJSON.getString("offset.value");
         this.mongoDBDeserializationMode = configJSON.getString("mongodb.deserialization.mode");
+        this.collNameMap = configJSON.getJSONObject("collection.name.map");
 
         if (StringUtils.isNullOrWhitespaceOnly(this.username) || StringUtils.isNullOrWhitespaceOnly(this.password)) {
             LOG.warn(">>> [MONGODB-STREAMER] NOT USING AUTHENTICATION");
@@ -91,8 +92,6 @@ public class MongoDBStreamer implements Streamer<String> {
         }
 
         this.collectionName = this.collectionFullName.split("\\.")[1];
-
-        this.collNameMap = configJSON.getJSONObject("collection.name.map");
 
         if (StringUtils.isNullOrWhitespaceOnly(this.username)
             || StringUtils.isNullOrWhitespaceOnly(this.password)) {
@@ -226,8 +225,6 @@ public class MongoDBStreamer implements Streamer<String> {
                 // Sample size
                 int sampleSize = 100;
 
-                // Set to store field names
-
                 int count = 0;
                 try (MongoCursor<Document> cursor = collection.find().limit(sampleSize).iterator()) {
                     while (cursor.hasNext()) {
@@ -280,12 +277,12 @@ public class MongoDBStreamer implements Streamer<String> {
 
             final Schema avroSchema = fieldAssembler.endRecord();
 
-            String mappedTableName;
+            String mappedCollectionName;
             String sanitizedMappedCollName = sanitizedCollectionName;
             if (collNameMap != null) {
-                mappedTableName = collNameMap.getString(collectionName);
-                if (mappedTableName != null) {
-                    sanitizedMappedCollName = Sanitizer.sanitize(mappedTableName);
+                mappedCollectionName = collNameMap.getString(collectionName);
+                if (mappedCollectionName != null) {
+                    sanitizedMappedCollName = Sanitizer.sanitize(mappedCollectionName);
                 }
             }
 
