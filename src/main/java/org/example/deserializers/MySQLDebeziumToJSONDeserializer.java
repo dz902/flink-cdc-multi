@@ -78,16 +78,13 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
             long ts = -1;
 
             try {
-                ts = valueSource.getInt64("ts_ms");
-
-                if (ts < 1) {
-                    ts = value.getInt64("ts_ms");
-                }
+                ts = value.getInt64("ts_ms");
             } catch (Exception e) {
                 LOG.error(">>> [AVRO-DESERIALIZER] UNABLE TO DECODE TS_MS: {}", sourceRecord);
                 throw e;
             }
 
+            ts = valueSource.getInt64("ts_ms");
             ddlObject.put("_ts", ts);
 
             collector.collect(JSON.toJSONString(ddlObject, SerializerFeature.WriteMapNullValue));
