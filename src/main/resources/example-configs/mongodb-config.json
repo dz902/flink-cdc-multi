@@ -14,6 +14,9 @@
   "checkpoint.storage": "filesystem",
   "checkpoint.directory": "s3://{bucket}/checkpoints",
   "offset.store.path": "s3://{bucket}/offsets",
+  "database.name.map": {
+    "my-db": "my-db-prod"
+  },
   "collection.name.map": {
     "my_coll": "my_coll_v20240713"
   }

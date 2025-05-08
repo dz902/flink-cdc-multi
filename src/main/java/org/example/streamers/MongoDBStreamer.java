@@ -37,6 +37,7 @@ public class MongoDBStreamer implements Streamer<String> {
     private final boolean snapshotOnly;
     private final String connectionOptions;
     private final JSONObject collNameMap;
+    private final JSONObject dbNameMap;
     private String startupMode;
     private String mongoDBDeserializationMode;
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
@@ -51,6 +52,7 @@ public class MongoDBStreamer implements Streamer<String> {
         this.offsetValue = configJSON.getString("offset.value");
         this.mongoDBDeserializationMode = configJSON.getString("mongodb.deserialization.mode");
         this.collNameMap = configJSON.getJSONObject("collection.name.map");
+        this.dbNameMap = configJSON.getJSONObject("database.name.map");
 
         if (StringUtils.isNullOrWhitespaceOnly(this.username) || StringUtils.isNullOrWhitespaceOnly(this.password)) {
             LOG.warn(">>> [MONGODB-STREAMER] NOT USING AUTHENTICATION");
@@ -208,7 +210,15 @@ public class MongoDBStreamer implements Streamer<String> {
                 compatibilityMode = true;
             }
 
-            final String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
+            String mappedDatabaseName = databaseName;
+            String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
+            if (dbNameMap != null) {
+                mappedDatabaseName = dbNameMap.getString(databaseName);
+                if (mappedDatabaseName != null) {
+                    sanitizedDatabaseName = Sanitizer.sanitize(mappedDatabaseName);
+                }
+            }
+
             final String sanitizedCollectionName = Sanitizer.sanitize(collectionName);
 
             LOG.info(
