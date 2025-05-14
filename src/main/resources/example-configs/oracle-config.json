@@ -1,0 +1,31 @@
+{
+  "sink.path": "/tmp/test",
+  "source.type": "oracle",
+  "source.id": "oracle_source",
+  "source.hostname": "localhost",
+  "source.port": "49161",
+  "source.username": "flinkuser",
+  "source.password": "flinkpw",
+  "source.database.name": "xe",
+  "source.schema.name": "HR",
+  "source.table.list": "EMPLOYEES,DEPARTMENTS",
+  "oracle.pdb.name": "ORCLPDB",
+  "oracle.connection.options": "oracle.jdbc.fanEnabled=false",
+  "snapshot.only": false,
+  "checkpoint.interval": 10,
+  "_checkpoint.storage": "filesystem",
+  "_checkpoint.directory": "s3://{bucket}/checkpoints",
+  "offset.store.path": "/tmp/test/offsets",
+  "status.store.path": "/tmp/test/status",
+  "database.name.map": {
+    "ORCLPDB": "ORCLPDB_PROD"
+  },
+  "table.name.map": {
+    "EMPLOYEES": "EMPLOYEES_V20240713",
+    "DEPARTMENTS": "DEPARTMENTS_V20240713"
+  },
+  "oracle.split.size": 4096,
+  "oracle.fetch.size": 1024,
+  "oracle.logminer.parallelism": 1,
+  "startup.mode": "initial"
+} 

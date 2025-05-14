@@ -105,6 +105,11 @@ under the License.
 			<version>${flink.cdc.version}</version>
 		</dependency>
 		<dependency>
+			<groupId>com.ververica</groupId>
+			<artifactId>flink-connector-oracle-cdc</artifactId>
+			<version>${flink.cdc.version}</version>
+		</dependency>
+		<dependency>
 			<groupId>org.apache.flink</groupId>
 			<artifactId>flink-shaded-guava</artifactId>
 			<version>${flink.guava.version}</version>

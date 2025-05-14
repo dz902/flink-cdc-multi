@@ -37,13 +37,11 @@ import org.example.bucketassigners.DateBucketAssigner;
 import org.example.processfunctions.common.StatusStoreProcessFunction;
 import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
 import org.example.processfunctions.mysql.BinlogOffsetStoreProcessFunction;
+import org.example.processfunctions.oracle.ScnOffsetStoreProcessFunction;
 import org.example.processfunctions.postgres.LsnOffsetStoreProcessFunction;
 import org.example.richmapfunctions.JSONToGenericRecordMapFunction;
 import org.example.sinkfunctions.SingleFileSinkFunction;
-import org.example.streamers.MongoDBStreamer;
-import org.example.streamers.MySQLStreamer;
-import org.example.streamers.PostgresStreamer;
-import org.example.streamers.Streamer;
+import org.example.streamers.*;
 import org.example.utils.Thrower;
 import org.example.utils.Validator;
 
@@ -276,6 +274,9 @@ public class FlinkCDCMulti {
             case "postgres":
                 streamer = new PostgresStreamer(configJSON);
                 break;
+            case "oracle":
+                streamer = new OracleStreamer(configJSON);
+                break;
             default:
                 String msg = String.format("UNSUPPORTED SOURCE TYPE: %s", sourceType);
                 LOG.error(">>> [MAIN] {}", msg);
@@ -300,6 +301,9 @@ public class FlinkCDCMulti {
                 break;
             case "mongodb":
                 offsetFunc = new TimestampOffsetStoreProcessFunction();
+                break;
+            case "oracle":
+                offsetFunc = new ScnOffsetStoreProcessFunction();
                 break;
             default:
                 Thrower.errAndThrow("MAIN", String.format("UNKNOWN SOURCE TYPE: %s", sourceType));

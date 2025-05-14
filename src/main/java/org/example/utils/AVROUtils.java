@@ -63,8 +63,8 @@ public abstract class AVROUtils {
             case "SMALLINT":
             case "MEDIUMINT":
             case "INT2":
-            case "DATE":
             case "YEAR":
+            case "DATE":  // Keep DATE as INT for MySQL/PostgreSQL
                 return Schema.create(Schema.Type.INT);
             case "INT":
             case "INTEGER":
@@ -83,6 +83,57 @@ public abstract class AVROUtils {
             case "REAL":
             case "DOUBLE":
                 return Schema.create(Schema.Type.DOUBLE);
+            case "BIT":
+            case "BOOL":
+            case "BOOLEAN":
+                return Schema.create(Schema.Type.BOOLEAN);
+            case "VARCHAR":
+            case "CHAR":
+            case "TEXT":
+            case "DECIMAL":
+            case "TIMESTAMP":
+                return Schema.create(Schema.Type.STRING);
+            default:
+                LOG.warn(
+                    ">>> [AVRO-SCHEMA-CONVERTER] UNKNOWN DATA TYPE DEFAULTED TO STRING: {}",
+                    dataType
+                );
+                return Schema.create(Schema.Type.STRING); // Default to STRING for unrecognized types
+        }
+    }
+
+    public static Schema getOracleAvroSchemaFrom(String dataType) {
+        String dataTypeUpperCased = dataType.toUpperCase();
+        String convertedDataType = dataTypeUpperCased
+            .replaceAll("^\\s*([A-Z]+[248]?)\\s*(?:\\([0-9,]+\\))?.*$", "$1");
+        boolean isUnsigned = dataTypeUpperCased
+            .contains("UNSIGNED");
+
+        switch (convertedDataType) {
+            case "TINYINT":
+            case "SMALLINT":
+            case "MEDIUMINT":
+            case "INT2":
+            case "YEAR":
+                return Schema.create(Schema.Type.STRING);
+            case "INT":
+            case "INTEGER":
+            case "INT4":
+                if (isUnsigned) {
+                    return Schema.create(Schema.Type.STRING);
+                } else {
+                    return Schema.create(Schema.Type.STRING);
+                }
+            case "DATE":  // Oracle DATE is always LONG
+            case "BIGINT":
+            case "INT8":
+            case "DATETIME":
+            case "TIME":
+                return Schema.create(Schema.Type.STRING);
+            case "FLOAT":
+            case "REAL":
+            case "DOUBLE":
+                return Schema.create(Schema.Type.STRING);
             case "BIT":
             case "BOOL":
             case "BOOLEAN":
@@ -127,6 +178,20 @@ public abstract class AVROUtils {
             fieldBuilder.type().unionOf().nullType().and().type(getAvroSchemaFrom(fieldType)).endUnion().nullDefault();
         } else {
             fieldBuilder.type(getAvroSchemaFrom(fieldType)).noDefault();
+        }
+    }
+
+    public static void addOracleFieldToFieldAssembler(
+        FieldAssembler<Schema> fieldAssembler,
+        String fieldName, String fieldType, boolean isNullable
+    ) {
+        LOG.debug(">>> [AVRO-SCHEMA-CONVERTER] ADDING ORACLE FIELD: {} ({})", fieldName, fieldType);
+        FieldBuilder<Schema> fieldBuilder = fieldAssembler.name(fieldName);
+
+        if (isNullable) {
+            fieldBuilder.type().unionOf().nullType().and().type(getOracleAvroSchemaFrom(fieldType)).endUnion().nullDefault();
+        } else {
+            fieldBuilder.type(getOracleAvroSchemaFrom(fieldType)).noDefault();
         }
     }
 }
