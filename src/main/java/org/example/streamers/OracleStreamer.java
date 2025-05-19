@@ -23,10 +23,7 @@ import org.example.utils.Thrower;
 import org.example.utils.Validator;
 
 import java.sql.*;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class OracleStreamer implements Streamer<String> {
@@ -183,8 +180,12 @@ public class OracleStreamer implements Streamer<String> {
         )) {
             DatabaseMetaData metaData = connection.getMetaData();
             ResultSet tables = metaData.getTables(null, schemaName, "%", new String[]{"TABLE"});
+            List<String> actualTableNames = Arrays.stream(tableArray).map(t -> t.contains(".") ? t.substring(t.lastIndexOf('.') + 1) : t).collect(Collectors.toList());
             while (tables.next()) {
                 String tableName = tables.getString(3);
+                if (!actualTableNames.contains(tableName)) {
+                    continue;
+                }
                 String sanitizedTableName = Sanitizer.sanitize(tableName);
                 if (!tableName.equals(sanitizedTableName)) {
                     LOG.warn(">>> [ORACLE-STREAMER] TABLE NAME IS SANITIZED: {} -> {}", tableName, sanitizedTableName);
@@ -209,7 +210,7 @@ public class OracleStreamer implements Streamer<String> {
                 }
 
                 LOG.info(
-                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", 
+                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}",
                     String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedTableName),
                     (!sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : "")
                 );
@@ -245,7 +246,8 @@ public class OracleStreamer implements Streamer<String> {
                 Schema avroSchema = fieldAssembler.endRecord();
 
                 final String outputTagID = String.format("%s__%s", sanitizedMappedDatabaseName, sanitizedMappedTableName);
-                final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
+                final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {
+                };
                 tagSchemaMap.put(sanitizedTableName, Tuple2.of(outputTag, avroSchema));
 
                 LOG.info(String.valueOf(avroSchema));
@@ -270,7 +272,8 @@ public class OracleStreamer implements Streamer<String> {
         Schema ddlAvroSchema = ddlFieldAssembler.endRecord();
 
         final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedDDLTableName);
-        final OutputTag<String> ddlOutputTag = new OutputTag<>(outputTagID) {};
+        final OutputTag<String> ddlOutputTag = new OutputTag<>(outputTagID) {
+        };
 
         tagSchemaMap.put(sanitizedDDLTableName, Tuple2.of(ddlOutputTag, ddlAvroSchema));
 
