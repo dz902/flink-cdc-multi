@@ -9,6 +9,7 @@
   "source.database.name": "xe",
   "source.schema.name": "HR",
   "source.table.list": "EMPLOYEES,DEPARTMENTS",
+  "source.parallelism": 1,
   "oracle.connection.options": "oracle.jdbc.fanEnabled=false",
   "snapshot.only": false,
   "checkpoint.interval": 10,

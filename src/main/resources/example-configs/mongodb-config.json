@@ -7,6 +7,7 @@
   "source.password": "",
   "source.database.name": "my-db",
   "source.collection.name": "my-db.my_coll",
+  "source.parallelism": 1,
   "mongodb.deserialization.mode": "top-level-string",
   "mongodb.connection.options": "authSource=admin&readPreference=secondaryPreferred",
   "snapshot.only": "false",
