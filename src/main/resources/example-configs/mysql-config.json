@@ -26,5 +26,7 @@
   "table.name.map.store.file.path": "s3://{bucket}/",
   "mysql.server.id.range": "5000-5005",
   "mysql.split.size": 1024,
-  "mysql.fetch.size": 1024
+  "mysql.fetch.size": 1024,
+  "startup.mode": "timestamp",
+  "datetime.offset": "2024-01-01T00:00:00"
 }

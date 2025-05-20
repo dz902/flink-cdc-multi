@@ -51,6 +51,7 @@ public class MySQLStreamer implements Streamer<String> {
     private JSONObject snapshotConditions; // TODO: FOR REFILL DATA FROM A PERIOD
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
     private final String serverIdRange;
+    private String datetimeOffset; // Add new field for datetime offset
 
     public MySQLStreamer(JSONObject configJSON) {
         this.hostname = Validator.ensureNotEmpty("source.hostname", configJSON.getString("source.hostname"));
@@ -118,6 +119,7 @@ public class MySQLStreamer implements Streamer<String> {
         }
 
         this.startupMode = Validator.withDefault(configJSON.getString("startup.mode"), "initial");
+        this.datetimeOffset = configJSON.getString("datetime.offset"); // Get datetime offset from config
 
         switch (startupMode) {
             case "initial":
@@ -136,6 +138,13 @@ public class MySQLStreamer implements Streamer<String> {
             if (!startupMode.equals("offset")) {
                 LOG.info(">>> [MYSQL-STREAMER] OFFSET FOUND, STARTUP MODE CHANGED: {} -> offset", startupMode);
                 startupMode = "offset";
+            }
+        }
+
+        if (!StringUtils.isNullOrWhitespaceOnly(datetimeOffset)) {
+            if (!startupMode.equals("timestamp")) {
+                LOG.info(">>> [MYSQL-STREAMER] DATETIME OFFSET FOUND, STARTUP MODE CHANGED: {} -> timestamp", startupMode);
+                startupMode = "timestamp";
             }
         }
 
@@ -181,10 +190,23 @@ public class MySQLStreamer implements Streamer<String> {
                 }
                 break;
             case "timestamp":
-                // TODO
-                //startupOptions = StartupOptions.timestamp();
-                Thrower.errAndThrow("MYSQL-STREAMER", "NOT SUPPORTED YET");
-                return null;
+                if (StringUtils.isNullOrWhitespaceOnly(datetimeOffset)) {
+                    Thrower.errAndThrow(">>> [MYSQL-STREAMER] NO VALID DATETIME OFFSET, STARTUP MODE CHANGED: {} -> initial", startupMode);
+                    startupOptions = StartupOptions.initial();
+                } else {
+                    try {
+                        // Parse the datetime string to timestamp
+                        java.time.LocalDateTime dateTime = java.time.LocalDateTime.parse(datetimeOffset);
+                        java.time.Instant instant = dateTime.atZone(java.time.ZoneId.of(timezone)).toInstant();
+                        long timestamp = instant.toEpochMilli();
+                        startupOptions = StartupOptions.timestamp(timestamp);
+                        LOG.info(">>> [MYSQL-STREAMER] STARTING FROM TIMESTAMP: {} ({})", datetimeOffset, timestamp);
+                    } catch (Exception e) {
+                        Thrower.errAndThrow(">>> [MYSQL-STREAMER] INVALID DATETIME FORMAT: {} (expected format: yyyy-MM-ddTHH:mm:ss)", datetimeOffset);
+                        return null;
+                    }
+                }
+                break;
             default:
                 startupOptions = StartupOptions.initial();
         }
