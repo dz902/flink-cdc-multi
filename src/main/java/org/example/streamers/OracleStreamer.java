@@ -51,7 +51,7 @@ public class OracleStreamer implements Streamer<String> {
     public OracleStreamer(JSONObject configJSON) {
         this.hostname = Validator.ensureNotEmpty("source.hostname", configJSON.getString("source.hostname"));
         this.port = Integer.parseInt(
-            Validator.ensureNotEmpty("source.port", configJSON.getString("source.port"))
+                Validator.ensureNotEmpty("source.port", configJSON.getString("source.port"))
         );
         this.databaseName = Validator.ensureNotEmpty("source.database.name", configJSON.getString("source.database.name"));
         this.schemaName = Validator.ensureNotEmpty("source.schema.name", configJSON.getString("source.schema.name"));
@@ -65,9 +65,9 @@ public class OracleStreamer implements Streamer<String> {
             this.tableArray = tableList.split(",");
 
             tableArray = Arrays.stream(tableArray)
-                .map(String::trim)
-                .map(tbl -> tbl.contains(".") ? tbl : schemaName + "." + tbl)
-                .toArray(String[]::new);
+                    .map(String::trim)
+                    .map(tbl -> tbl.contains(".") ? tbl : schemaName + "." + tbl)
+                    .toArray(String[]::new);
 
             tableList = String.join(",", tableArray);
         } else {
@@ -150,19 +150,19 @@ public class OracleStreamer implements Streamer<String> {
         //debeziumProperties.setProperty("database.pdb.name", pdbName);
 
         return OracleSourceBuilder.OracleIncrementalSource.<String>builder()
-            .hostname(hostname)
-            .port(port)
-            .username(username)
-            .password(password)
-            .databaseList(databaseName)
-            .schemaList(schemaName)
-            .tableList(tableList)
-            .deserializer(new OracleDebeziumToJSONDeserializer())
-            .debeziumProperties(debeziumProperties)
-            .startupOptions(startupOptions)
-            .fetchSize(fetchSize)
-            .splitSize(splitSize)
-            .build();
+                .hostname(hostname)
+                .port(port)
+                .username(username)
+                .password(password)
+                .databaseList(databaseName)
+                .schemaList(schemaName)
+                .tableList(tableList)
+                .deserializer(new OracleDebeziumToJSONDeserializer())
+                .debeziumProperties(debeziumProperties)
+                .startupOptions(startupOptions)
+                .fetchSize(fetchSize)
+                .splitSize(splitSize)
+                .build();
     }
 
     @Override
@@ -174,9 +174,9 @@ public class OracleStreamer implements Streamer<String> {
         LOG.info(String.format(">>> [ORACLE-STREAMER] CONNECTING TO: %s", connectionString));
 
         try (Connection connection = DriverManager.getConnection(
-            connectionString,
-            username,
-            password
+                connectionString,
+                username,
+                password
         )) {
             DatabaseMetaData metaData = connection.getMetaData();
             ResultSet tables = metaData.getTables(null, schemaName, "%", new String[]{"TABLE"});
@@ -210,9 +210,9 @@ public class OracleStreamer implements Streamer<String> {
                 }
 
                 LOG.info(
-                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}",
-                    String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedTableName),
-                    (!sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : "")
+                        ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}",
+                        String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedTableName),
+                        (!sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : "")
                 );
 
                 ResultSet columns = metaData.getColumns(databaseName, schemaName, tableName, "%");
@@ -224,10 +224,10 @@ public class OracleStreamer implements Streamer<String> {
 
                     if (!columnName.equals(sanitizedColumnName)) {
                         LOG.warn(
-                            ">>> [MAIN] COLUMN NAME SANITIZED: ({}) {} -> {}",
-                            sanitizedTableName,
-                            columnName,
-                            sanitizedColumnName
+                                ">>> [MAIN] COLUMN NAME SANITIZED: ({}) {} -> {}",
+                                sanitizedTableName,
+                                columnName,
+                                sanitizedColumnName
                         );
                     }
 
@@ -254,8 +254,8 @@ public class OracleStreamer implements Streamer<String> {
             }
         } catch (SQLException e) {
             Thrower.errAndThrow(
-                "ORACLE-STREAM",
-                String.format(">>> [MAIN] UNABLE TO CONNECT TO SOURCE, EXCEPTION: %s", e.getMessage())
+                    "ORACLE-STREAM",
+                    String.format(">>> [MAIN] UNABLE TO CONNECT TO SOURCE, EXCEPTION: %s", e.getMessage())
             );
         }
 
@@ -278,15 +278,15 @@ public class OracleStreamer implements Streamer<String> {
         tagSchemaMap.put(sanitizedDDLTableName, Tuple2.of(ddlOutputTag, ddlAvroSchema));
 
         LOG.info(
-            ">>> [MAIN] TAG-SCHEMA MAP FOR: {}", String.format("%s.%s", sanitizedDatabaseName, sanitizedDDLTableName)
+                ">>> [MAIN] TAG-SCHEMA MAP FOR: {}", String.format("%s.%s", sanitizedDatabaseName, sanitizedDDLTableName)
         );
         LOG.info(String.valueOf(ddlAvroSchema));
 
         this.tagSchemaStringMap = tagSchemaMap.entrySet().stream()
-            .collect(Collectors.toMap(
-                Map.Entry::getKey,
-                entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
-            ));
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
+                ));
 
         return tagSchemaStringMap;
     }
@@ -298,11 +298,11 @@ public class OracleStreamer implements Streamer<String> {
         snapshotConfig.put("source.table.array", tableArray);
 
         return sourceStream
-            .keyBy(new NullByteKeySelector<>())
-            .process(new DelayedStopSignalProcessFunction(snapshotConfig))
-            .setParallelism(1)
-            .keyBy(new NullByteKeySelector<>())
-            .process(new SideInputProcessFunction(tagSchemaStringMap))
-            .setParallelism(1);
+                .keyBy(new NullByteKeySelector<>())
+                .process(new DelayedStopSignalProcessFunction(snapshotConfig))
+                .setParallelism(1)
+                .keyBy(new NullByteKeySelector<>())
+                .process(new SideInputProcessFunction(tagSchemaStringMap))
+                .setParallelism(1);
     }
 } 

@@ -13,6 +13,7 @@ import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.GlobalConfiguration;
+import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.connector.file.sink.FileSink;
 import org.apache.flink.core.fs.FSDataInputStream;
 import org.apache.flink.core.fs.FileSystem;
@@ -25,6 +26,7 @@ import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
+import org.apache.flink.streaming.api.functions.sink.filesystem.OutputFileConfig;
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.OnCheckpointRollingPolicy;
 import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
@@ -67,6 +69,7 @@ public class FlinkCDCMulti {
     private static String sinkPath;
     private static String offsetValue;
     private static String offsetStoreFilePath;
+    private static Integer sourceParallelism;
     private static Streamer<String> streamer;
     private static DataStream<String> sourceStream;
     private static DataStream<GenericRecord> sideStreams;
@@ -138,12 +141,12 @@ public class FlinkCDCMulti {
     private static void createSourceStream() {
         Source<String, ?, ?> source = streamer.getSource();
         sourceStream = env
-            .fromSource(
-                source,
-                WatermarkStrategy.noWatermarks(),
-                streamer.getClass().getSimpleName()
-            )
-            .setParallelism(1);
+                .fromSource(
+                        source,
+                        WatermarkStrategy.noWatermarks(),
+                        streamer.getClass().getSimpleName()
+                )
+                .setParallelism(sourceParallelism);
     }
 
     private static void addDefaultPrintSink() {
@@ -520,6 +523,7 @@ public class FlinkCDCMulti {
         sourceId = Validator.ensureNotEmpty("source.id", configJSON.getString("source.id"));
         sourceType = Validator.ensureNotEmpty("source.type", configJSON.getString("source.type"));
         sinkPath = Validator.ensureNotEmpty("sink.path", configJSON.getString("sink.path"));
+        sourceParallelism = Validator.withDefault(configJSON.getInteger("source.parallelism"), 1);
     }
 
     private static void configureTableNameMap() {
