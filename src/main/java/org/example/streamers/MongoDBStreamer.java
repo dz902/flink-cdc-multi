@@ -24,13 +24,15 @@ import org.example.utils.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.Arrays;
+import java.util.List;
 
 public class MongoDBStreamer implements Streamer<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final String hosts;
     private final String databaseName;
-    private final String collectionFullName;
-    private final String collectionName;
+    private final String[] collectionFullNames;
+    private final String[] collectionNames;
     private final String username;
     private final String password;
     private final String offsetValue;
@@ -46,7 +48,16 @@ public class MongoDBStreamer implements Streamer<String> {
     public MongoDBStreamer(JSONObject configJSON) {
         this.hosts = Validator.ensureNotEmpty("source.hosts", configJSON.getString("source.hosts"));
         this.databaseName = Validator.ensureNotEmpty("source.database.name", configJSON.getString("source.database.name"));
-        this.collectionFullName = Validator.ensureNotEmpty("source.collection.name", configJSON.getString("source.collection.name"));
+        
+        // Change from source.collection.name to source.collection.list
+        String collectionList = Validator.ensureNotEmpty("source.collection.list", configJSON.getString("source.collection.list"));
+        this.collectionFullNames = collectionList.split(",");
+        
+        // Trim whitespace from each collection name
+        for (int i = 0; i < this.collectionFullNames.length; i++) {
+            this.collectionFullNames[i] = this.collectionFullNames[i].trim();
+        }
+        
         this.username = configJSON.getString("source.username");
         this.password = configJSON.getString("source.password");
         this.offsetValue = configJSON.getString("offset.value");
@@ -67,11 +78,14 @@ public class MongoDBStreamer implements Streamer<String> {
             );
         }
 
-        if (!this.collectionFullName.contains(".")) {
-            Thrower.errAndThrow(
-                "MONGODB-STREAMER",
-                String.format("COLLECTION NAME MUST BE PREFIXED WITH DB (DB.COLLECTION): %s", this.collectionFullName)
-            );
+        // Validate each collection name
+        for (String collectionFullName : this.collectionFullNames) {
+            if (!collectionFullName.contains(".")) {
+                Thrower.errAndThrow(
+                    "MONGODB-STREAMER",
+                    String.format("COLLECTION NAME MUST BE PREFIXED WITH DB (DB.COLLECTION): %s", collectionFullName)
+                );
+            }
         }
 
         if (StringUtils.isNullOrWhitespaceOnly(mongoDBDeserializationMode)) {
@@ -93,7 +107,11 @@ public class MongoDBStreamer implements Streamer<String> {
             LOG.info(">>> [MONGODB-STREAMER] MONGODB DESERIALIZATION MODE: {}", mongoDBDeserializationMode);
         }
 
-        this.collectionName = this.collectionFullName.split("\\.")[1];
+        // Extract collection names from full names
+        this.collectionNames = new String[this.collectionFullNames.length];
+        for (int i = 0; i < this.collectionFullNames.length; i++) {
+            this.collectionNames[i] = this.collectionFullNames[i].split("\\.")[1];
+        }
 
         if (StringUtils.isNullOrWhitespaceOnly(this.username)
             || StringUtils.isNullOrWhitespaceOnly(this.password)) {
@@ -123,6 +141,8 @@ public class MongoDBStreamer implements Streamer<String> {
         if (!StringUtils.isNullOrWhitespaceOnly(connectionOptions)) {
             LOG.info(">>> [MONGO-STREAMER] CONNECTION OPTIONS: {}", connectionOptions);
         }
+        
+        LOG.info(">>> [MONGODB-STREAMER] CONFIGURED COLLECTIONS: {}", String.join(", ", this.collectionFullNames));
     }
 
     public MongoDBSource<String> getSource() {
@@ -172,7 +192,7 @@ public class MongoDBStreamer implements Streamer<String> {
             .username(username)
             .password(password)
             .databaseList(databaseName)
-            .collectionList(collectionFullName)
+            .collectionList(collectionFullNames)
             .deserializer(new MongoDBDebeziumToJSONDeserializer(mongoDBDeserializationMode, tagSchemaStringMap))
             .startupOptions(startupOptions)
             .batchSize(64) // TODO: THIS IS TO REDUCE RISK OF OOM, BUT SHOULD BE CONFIGURABLE
@@ -219,97 +239,102 @@ public class MongoDBStreamer implements Streamer<String> {
                 }
             }
 
-            final String sanitizedCollectionName = Sanitizer.sanitize(collectionName);
+            // Process each collection
+            for (int i = 0; i < collectionNames.length; i++) {
+                String collectionName = collectionNames[i];
+                String collectionFullName = collectionFullNames[i];
+                final String sanitizedCollectionName = Sanitizer.sanitize(collectionName);
 
-            LOG.info(
-                ">>> [MONGODB-STREAMER] FETCHING SCHEMA FOR {}.{}",
-                sanitizedDatabaseName, sanitizedCollectionName
-            );
+                LOG.info(
+                    ">>> [MONGODB-STREAMER] FETCHING SCHEMA FOR {}.{}",
+                    sanitizedDatabaseName, sanitizedCollectionName
+                );
 
-            Map<String, Class<?>> fieldTypes = new NoOverwriteHashMap<>();
+                Map<String, Class<?>> fieldTypes = new NoOverwriteHashMap<>();
 
-            if (!"doc-string".equals(mongoDBDeserializationMode)) {
-                MongoDatabase database = mongoClient.getDatabase(databaseName);
-                MongoCollection<Document> collection = database.getCollection(collectionName);
+                if (!"doc-string".equals(mongoDBDeserializationMode)) {
+                    MongoDatabase database = mongoClient.getDatabase(databaseName);
+                    MongoCollection<Document> collection = database.getCollection(collectionName);
 
-                // Sample size
-                int sampleSize = 100;
+                    // Sample size
+                    int sampleSize = 100;
 
-                int count = 0;
-                try (MongoCursor<Document> cursor = collection.find().limit(sampleSize).iterator()) {
-                    while (cursor.hasNext()) {
-                        count += 1;
-                        Document doc = cursor.next();
-                        for (Map.Entry<String, Object> entry : doc.entrySet()) {
-                            String fieldName = entry.getKey();
-                            Object value = entry.getValue();
+                    int count = 0;
+                    try (MongoCursor<Document> cursor = collection.find().limit(sampleSize).iterator()) {
+                        while (cursor.hasNext()) {
+                            count += 1;
+                            Document doc = cursor.next();
+                            for (Map.Entry<String, Object> entry : doc.entrySet()) {
+                                String fieldName = entry.getKey();
+                                Object value = entry.getValue();
 
-                            if ("top-level-type".equals(mongoDBDeserializationMode)) {
-                                if (fieldTypes.containsKey(fieldName)) {
-                                    if (fieldTypes.get(fieldName) != value.getClass()) {
-                                        LOG.error(">>> [MONGO-STEAMER] FIELD TYPE CONFLICT: {} ({} <-> {})", fieldName, fieldTypes.get(fieldName), value.getClass());
-                                        Thrower.errAndThrow("MONGODB-STREAMER",
-                                            ">>> [MONGODB-STREAMER] CONFLICTING SCHEMA FOUND IN DOC SAMPLES, MUST CHANGE MODE TO: top-level-string"
-                                        );
+                                if ("top-level-type".equals(mongoDBDeserializationMode)) {
+                                    if (fieldTypes.containsKey(fieldName)) {
+                                        if (fieldTypes.get(fieldName) != value.getClass()) {
+                                            LOG.error(">>> [MONGO-STEAMER] FIELD TYPE CONFLICT: {} ({} <-> {})", fieldName, fieldTypes.get(fieldName), value.getClass());
+                                            Thrower.errAndThrow("MONGODB-STREAMER",
+                                                ">>> [MONGODB-STREAMER] CONFLICTING SCHEMA FOUND IN DOC SAMPLES, MUST CHANGE MODE TO: top-level-string"
+                                            );
+                                        }
+                                    } else {
+                                        fieldTypes.put(fieldName, value != null ? value.getClass() : Object.class);
                                     }
-                                } else {
-                                    fieldTypes.put(fieldName, value != null ? value.getClass() : Object.class);
-                                }
-                            } else if ("top-level-string".equals(mongoDBDeserializationMode)) {
-                                if (!fieldTypes.containsKey(fieldName)) {
-                                    fieldTypes.put(fieldName, String.class);
+                                } else if ("top-level-string".equals(mongoDBDeserializationMode)) {
+                                    if (!fieldTypes.containsKey(fieldName)) {
+                                        fieldTypes.put(fieldName, String.class);
+                                    }
                                 }
                             }
                         }
                     }
+
+                    LOG.info(">>> [MONGODB-STREAMER] FETCHED {} SAMPLES FOR COLLECTION {}", count, collectionName);
+
+                    if (count < 1) {
+                        Thrower.errAndThrow("MONGODB-STREAMER", String.format("CANNOT INFER SCHEMA FROM EMPTY COLLECTION: %s", collectionName));
+                    } else if (count < 50) {
+                        LOG.warn(">>> [MONGODB-STREAMER] USING ONLY {} SAMPLES TO INFER SCHEMA FOR COLLECTION {}, MAY NOT BE ACCURATE", count, collectionName);
+                    }
                 }
 
-                LOG.info(">>> [MONGODB-STREAMER] FETCHED {} SAMPLES", count);
+                FieldAssembler<Schema> fieldAssembler = AVROUtils.createFieldAssemblerWithFieldTypes(fieldTypes);
 
-                if (count < 1) {
-                    Thrower.errAndThrow("MONGODB-STREAMER", "CANNOT INFER SCHEMA FROM EMPTY COLLECTION");
-                } else if (count < 50) {
-                    LOG.warn(">>> [MONGODB-STREAMER] USING ONLY {} SAMPLES TO INFER SCHEMA, MAY NOT BE ACCURATE", count);
+                // TODO: THIS DOES NOT LOOK LOOK, REFACTOR DOC-STRING LINE
+                if ("doc-string".equals(mongoDBDeserializationMode)) {
+                    AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_id", String.class, false);
+                    AVROUtils.addFieldToFieldAssembler(fieldAssembler, "doc", String.class, false);
                 }
-            }
 
-            FieldAssembler<Schema> fieldAssembler = AVROUtils.createFieldAssemblerWithFieldTypes(fieldTypes);
+                AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_op", String.class, false);
+                AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_ts", Long.class, false);
+                AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_txn_op_index", String.class, false);
 
-            // TODO: THIS DOES NOT LOOK LOOK, REFACTOR DOC-STRING LINE
-            if ("doc-string".equals(mongoDBDeserializationMode)) {
-                AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_id", String.class, false);
-                AVROUtils.addFieldToFieldAssembler(fieldAssembler, "doc", String.class, false);
-            }
+                final Schema avroSchema = fieldAssembler.endRecord();
 
-            AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_op", String.class, false);
-            AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_ts", Long.class, false);
-            AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_txn_op_index", String.class, false);
-
-            final Schema avroSchema = fieldAssembler.endRecord();
-
-            String mappedCollectionName;
-            String sanitizedMappedCollName = sanitizedCollectionName;
-            if (collNameMap != null) {
-                mappedCollectionName = collNameMap.getString(collectionName);
-                if (mappedCollectionName != null) {
-                    sanitizedMappedCollName = Sanitizer.sanitize(mappedCollectionName);
+                String mappedCollectionName;
+                String sanitizedMappedCollName = sanitizedCollectionName;
+                if (collNameMap != null) {
+                    mappedCollectionName = collNameMap.getString(collectionName);
+                    if (mappedCollectionName != null) {
+                        sanitizedMappedCollName = Sanitizer.sanitize(mappedCollectionName);
+                    }
                 }
+
+                // TODO: CUSTOM OUTPUT PATH FORMAT
+                final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedMappedCollName);
+                final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
+
+                tagSchemaMap.put(sanitizedCollectionName, Tuple2.of(outputTag, avroSchema));
+
+                LOG.info(
+                    ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", sanitizedDatabaseName, sanitizedCollectionName) ,
+                    (
+                        !sanitizedCollectionName.equals(sanitizedMappedCollName) ? ("(" + sanitizedMappedCollName + ")") : ""
+                    )
+                );
+                LOG.debug(">>> [MONGODB-STREAMER] AVRO SCHEMA INFERRED FROM 100 SAMPLES FOR COLLECTION {}", collectionName);
+                LOG.debug(avroSchema.toString(true));
             }
-
-            // TODO: CUSTOM OUTPUT PATH FORMAT
-            final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedMappedCollName);
-            final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
-
-            tagSchemaMap.put(sanitizedCollectionName, Tuple2.of(outputTag, avroSchema));
-
-            LOG.info(
-                ">>> [MAIN] TAG-SCHEMA MAP FOR: {}{}", String.format("%s.%s", sanitizedDatabaseName, sanitizedCollectionName) ,
-                (
-                    !sanitizedCollectionName.equals(sanitizedMappedCollName) ? ("(" + sanitizedMappedCollName + ")") : ""
-                )
-            );
-            LOG.debug(">>> [MONGODB-STREAMER] AVRO SCHEMA INFERRED FROM 100 SAMPLES");
-            LOG.debug(avroSchema.toString(true));
         }
 
         this.tagSchemaStringMap = tagSchemaMap.entrySet().stream()

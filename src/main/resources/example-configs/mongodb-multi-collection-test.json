@@ -1,12 +1,12 @@
 {
   "sink.path": "/tmp/test",
   "source.type": "mongodb",
-  "source.id": "mongodb_source",
+  "source.id": "mongodb_multi_source",
   "source.hosts": "localhost:27017",
   "source.username": "",
   "source.password": "",
-  "source.database.name": "my-db",
-  "source.collection.list": "my-db.my_coll, my-db.my_coll2, my-db.my_coll3",
+  "source.database.name": "test-db",
+  "source.collection.list": "test-db.users, test-db.orders, test-db.products",
   "mongodb.deserialization.mode": "top-level-string",
   "mongodb.connection.options": "authSource=admin&readPreference=secondaryPreferred",
   "snapshot.only": "false",
@@ -15,11 +15,11 @@
   "checkpoint.directory": "s3://{bucket}/checkpoints",
   "offset.store.path": "s3://{bucket}/offsets",
   "database.name.map": {
-    "my-db": "my-db-prod"
+    "test-db": "test-db-prod"
   },
   "collection.name.map": {
-    "my_coll": "my_coll_v20240713",
-    "my_coll2": "my_coll2_v20240713",
-    "my_coll3": "my_coll3_v20240713"
+    "users": "users_v20240713",
+    "orders": "orders_v20240713",
+    "products": "products_v20240713"
   }
-}
+} 

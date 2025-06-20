@@ -63,6 +63,10 @@ public class MongoDBDebeziumToJSONDeserializer implements DebeziumDeserializatio
                     offset = resumeTokenObject.getString("txnOpIndex");
                 }
             }
+
+            if (offset == null) {
+                offset = "";
+            }
         } catch (JSONException e) {
             LOG.error(">>> [AVRO-DESERIALIZER] ERROR FINDING OFFSET: {}", e.getMessage());
         }
@@ -100,7 +104,11 @@ public class MongoDBDebeziumToJSONDeserializer implements DebeziumDeserializatio
             recordObject = new JSONObject();
         } else {
             Object fullDocument = value.get("fullDocument");
-            recordObject = JSONObject.parseObject(JSONObject.toJSONString(fullDocument));
+            if (fullDocument != null) {
+                recordObject = JSONObject.parseObject(JSONObject.toJSONString(fullDocument));
+            } else {
+                recordObject = new JSONObject();
+            }
         }
 
         recordObject.put("_id", id);
