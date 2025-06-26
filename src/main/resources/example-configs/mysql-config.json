@@ -7,7 +7,7 @@
   "source.username": "root",
   "source.password": "testtest",
   "source.timezone": "UTC",
-  "source.database.name": "test",
+  "source.database.list": "test",
   "snapshot.only": "false",
   "checkpoint.interval": 10,
   "checkpoint.storage": "filesystem",

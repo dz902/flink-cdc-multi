@@ -151,6 +151,7 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
 
         recordObject.put("_db", sanitizedDatabaseName);
         recordObject.put("_tbl", sanitizedTableName);
+        recordObject.put("_database", databaseName);
         recordObject.put("_op", op);
 
         long ts = -1;

@@ -23,6 +23,10 @@
         - 开发和测试基于 `8.0.38`，但应该也适用于 `5.x`
         - 当收到  语句时，自动停止任务并发送消息
         - 每个作业都会创建一个特殊的 DDL 表（`{source_id}_{db_name}__{db_name}_ddl`）来记录 DDL 供您参考
+        - **新增**：MySQL 多数据库支持 - 在单个作业中捕获多个数据库的变更
+          - 使用 `source.database.list` 替代 `source.database.name` 来支持多个数据库
+          - 使用数据库前缀指定表：`source.table.list: "db1.table1,db1.table2,db2.table3"`
+          - 与现有单数据库配置向后兼容
     - MongoDB
         - 开发和测试基于 `3.6`
             - 目前只同步 1 个表，因为 `3.6` 不支持监视数据库或部署
@@ -84,6 +88,118 @@
 - 通过更改 `pom.xml` 和使用 `compile` 而不是 provided，您应该能够在任何环境中运行它
     - 或者，您也可以从正在运行的 EMR 集群中复制 Flink 和 Hadoop JAR
 
+## 多数据库配置
+
+### 多数据库
+使用 `source.database.list` 和逗号分隔的数据库名称：
+
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.customers,staging.analytics"
+}
+```
+
+### 配置示例
+
+#### 来自多个数据库的所有表
+```json
+{
+  "source.database.list": "test,production,staging"
+}
+```
+这将捕获所有三个数据库中的所有表。
+
+#### 来自多个数据库的特定表
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.customers,production.transactions,staging.analytics"
+}
+```
+
+#### 数据库名称映射
+```json
+{
+  "source.database.list": "test,production,staging",
+  "database.name.map": {
+    "test": "test_prod",
+    "production": "prod_env",
+    "staging": "staging_env"
+  }
+}
+```
+
+#### 表名映射
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.customers",
+  "table.name.map": {
+    "test.users": "users_v20240713",
+    "test.orders": "orders_v20240713",
+    "production.customers": "customers_v20240713"
+  }
+}
+```
+
+### 多数据库重要注意事项
+
+1. **必需配置**：现在所有 MySQL 配置都需要 `source.database.list`
+2. **表规范**：所有表必须使用数据库前缀指定：
+   - **必需格式**：`"db1.table1,db2.table2"` - 来自特定数据库的特定表
+   - **通配符支持**：`"db1.*"` - 来自特定数据库的所有表
+3. **数据库名称映射**：每个数据库可以使用 `database.name.map` 映射到不同的目标名称
+4. **表名映射**：表名可以使用 `table.name.map` 映射到不同的目标名称。所有表映射键必须包含数据库前缀（例如，`"db1.table1": "new_table_name"`）
+5. **DDL 表**：每个数据库都有自己的 DDL 表来跟踪模式变更
+6. **性能**：由于复杂性增加，多数据库作业可能需要更多资源
+7. **偏移管理**：系统现在支持每数据库偏移跟踪，以便更好地恢复
+8. **未知表处理**：默认情况下，未知表会被跳过并发出警告。设置 `fail.on.unknown.tables=true` 在遇到未配置的表时使作业失败
+
+### 表列表示例
+
+#### 来自特定数据库的特定表
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.customers,staging.analytics"
+}
+```
+
+#### 来自所有数据库的所有表
+```json
+{
+  "source.database.list": "test,production,staging"
+}
+```
+这将捕获所有三个数据库中的所有表。
+
+#### 混合特定表和通配符表
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.*,staging.analytics"
+}
+```
+这将捕获：
+- 来自 test 数据库的 `users` 和 `orders`
+- 来自 production 数据库的所有表
+- 来自 staging 数据库的 `analytics`
+
+### 多数据库偏移格式
+
+系统对所有数据库使用单一偏移，因为它们共享同一个二进制日志流。
+
+#### 偏移配置
+```json
+{
+  "source.database.list": "test,production,staging",
+  "_offset.value": "mysql-bin.000003,43650"
+}
+```
+
+此单一偏移适用于配置中的所有数据库。
+
 ## 已知问题
 
 - 数据库和表名中的连字符（`-`）将被转换为下划线（`_`）
@@ -92,7 +208,7 @@
     - 混合使用连字符和下划线也显得不美观
 - 当从 binlog 偏移存储自动恢复操作时，最后的语句会重复
     - Debezium 只会在有事务时捕获第一条语句的结束 binlog 偏移（例如，使用 `BEGIN`）
-    - 使用 `ROW` binlog 模式时，此类事务的第一条语句可能是“表映射”
+    - 使用 `ROW` binlog 模式时，此类事务的第一条语句可能是"表映射"
     - 如果我们跳过表映射语句，Debezium 会抱怨缺少表映射
     - 因此对于非 DDL 语句，我们捕获的是开始 binlog 偏移而不是结束的
     - 这导致在最后一个事务中重复语句

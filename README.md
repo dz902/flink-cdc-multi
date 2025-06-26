@@ -25,6 +25,10 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
     - Developed and tested against `8.0.38`, but should also work on `5.x`)
     - When a DDL statement is received, auto stop task with a message
     - A special DDL table (`{source_id}_{db_name}__{db_name}_ddl`) is created for each job to record DDLs for your reference
+    - **NEW**: Multi-database support for MySQL - capture changes from multiple databases in a single job
+      - Use `source.database.list` instead of `source.database.name` for multiple databases
+      - Specify tables with database prefix: `source.table.list: "db1.table1,db1.table2,db2.table3"`
+      - Backward compatible with existing single-database configurations
   - MongoDB
     - Developed and tested against `3.6`
       - Currently only syncs 1 table because `3.6` does not support watching db or deployment
@@ -43,6 +47,7 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
 - Features
   - A single job to sync all or some tables in a database
     - (maybe) A single job to sync a whole deployment
+  - **NEW**: Multi-database support for MySQL - capture changes from multiple databases in a single job
   - No schema definition is required for source or target
   - Auto binlog offset recording and restore for each table, with offsets recorded in files on HDFS or Amazon S3
   - Table name mapping for manual schema evolution
@@ -85,6 +90,118 @@ It is commented fiercely with abundant logging, with a debug mode option. This i
   - `--debug`, will show all DEBUG and TRACE logs (sent by this app only)
 - You should be able to get it running in any environment by changing `pom.xml` and use `compile` instead of provided
   - Or, you can also copy Flink and Hadoop jars from a running EMR cluster
+
+## Multi-Database Configuration
+
+### Multiple Databases
+Use `source.database.list` with comma-separated database names:
+
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.customers,staging.analytics"
+}
+```
+
+### Configuration Examples
+
+#### All Tables from Multiple Databases
+```json
+{
+  "source.database.list": "test,production,staging"
+}
+```
+This will capture all tables from all three databases.
+
+#### Specific Tables from Multiple Databases
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.customers,production.transactions,staging.analytics"
+}
+```
+
+#### Database Name Mapping
+```json
+{
+  "source.database.list": "test,production,staging",
+  "database.name.map": {
+    "test": "test_prod",
+    "production": "prod_env",
+    "staging": "staging_env"
+  }
+}
+```
+
+#### Table Name Mapping
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.customers",
+  "table.name.map": {
+    "test.users": "users_v20240713",
+    "test.orders": "orders_v20240713",
+    "production.customers": "customers_v20240713"
+  }
+}
+```
+
+### Important Notes for Multi-Database
+
+1. **Required Configuration**: `source.database.list` is now required for all MySQL configurations
+2. **Table Specification**: All tables must be specified with database prefixes:
+   - **Required format**: `"db1.table1,db2.table2"` - specific tables from specific databases
+   - **Wildcard support**: `"db1.*"` - all tables from a specific database
+3. **Database Name Mapping**: Each database can be mapped to a different target name using `database.name.map`
+4. **Table Name Mapping**: Table names can be mapped to different target names using `table.name.map`. All table mapping keys must include database prefixes (e.g., `"db1.table1": "new_table_name"`)
+5. **DDL Tables**: Each database gets its own DDL table for tracking schema changes
+6. **Performance**: Multi-database jobs may require more resources due to increased complexity
+7. **Offset Management**: The system now supports per-database offset tracking for better recovery
+8. **Unknown Table Handling**: By default, unknown tables are skipped with warnings. Set `fail.on.unknown.tables=true` to fail the job when encountering unconfigured tables
+
+### Table List Examples
+
+#### Specific Tables from Specific Databases
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.customers,staging.analytics"
+}
+```
+
+#### All Tables from All Databases
+```json
+{
+  "source.database.list": "test,production,staging"
+}
+```
+This will capture all tables from all three databases.
+
+#### Mixed Specific and Wildcard Tables
+```json
+{
+  "source.database.list": "test,production,staging",
+  "source.table.list": "test.users,test.orders,production.*,staging.analytics"
+}
+```
+This will capture:
+- `users` and `orders` from test database
+- All tables from production database
+- `analytics` from staging database
+
+### Multi-Database Offset Format
+
+The system uses a single offset for all databases since they share the same binary log stream.
+
+#### Offset Configuration
+```json
+{
+  "source.database.list": "test,production,staging",
+  "_offset.value": "mysql-bin.000003,43650"
+}
+```
+
+This single offset applies to all databases in the configuration.
 
 ## Known Issues
 

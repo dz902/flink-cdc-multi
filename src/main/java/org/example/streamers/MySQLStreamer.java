@@ -22,8 +22,10 @@ import org.example.utils.Thrower;
 import org.example.utils.Validator;
 
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
@@ -31,7 +33,7 @@ import java.util.stream.Collectors;
 public class MySQLStreamer implements Streamer<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final String hostname;
-    private final String databaseName;
+    private final String[] databaseNames; // Changed to array to support multiple databases
     private final int splitSize;
     private final int fetchSize;
     private String[] tableArray;
@@ -52,27 +54,55 @@ public class MySQLStreamer implements Streamer<String> {
     private Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
     private final String serverIdRange;
     private String datetimeOffset; // Add new field for datetime offset
+    private final JSONObject configJSON; // Store config for multi-database support
 
     public MySQLStreamer(JSONObject configJSON) {
+        this.configJSON = configJSON; // Initialize first
+        
         this.hostname = Validator.ensureNotEmpty("source.hostname", configJSON.getString("source.hostname"));
         this.port = Integer.parseInt(
             Validator.ensureNotEmpty("source.port", configJSON.getString("source.port"))
         );
-        this.databaseName = Validator.ensureNotEmpty("source.database.name", configJSON.getString("source.database.name"));
+        
+        // Only support multiple databases - require source.database.list
+        String databaseList = Validator.ensureNotEmpty("source.database.list", configJSON.getString("source.database.list"));
+        this.databaseNames = databaseList.split(",");
+        // Trim whitespace from each database name
+        for (int i = 0; i < this.databaseNames.length; i++) {
+            this.databaseNames[i] = this.databaseNames[i].trim();
+        }
+        LOG.info(">>> [MYSQL-STREAMER] DATABASES: {}", String.join(", ", this.databaseNames));
+        
         this.databaseNameMap = configJSON.getJSONObject("database.name.map");
 
-        String allTables = databaseName+".*";
-        this.tableList = Validator.withDefault(configJSON.getString("source.table.list"), allTables);
+        // Handle table list for multi-database mode
+        this.tableList = Validator.withDefault(configJSON.getString("source.table.list"), "");
+        if (StringUtils.isNullOrWhitespaceOnly(this.tableList)) {
+            // If no table list specified, use all tables from all databases
+            this.tableList = String.join(",", Arrays.stream(this.databaseNames)
+                .map(db -> db + ".*")
+                .collect(Collectors.toList()));
+        }
 
-        if (!tableList.equals(allTables)) {
-            this.tableArray = tableList.split(",");
+        if (!StringUtils.isNullOrWhitespaceOnly(this.tableList)) {
+            this.tableArray = this.tableList.split(",");
 
-            tableArray = Arrays.stream(tableArray)
-                .map(String::trim)
-                .map(tbl -> tbl.contains(".") ? tbl : databaseName +"."+tbl)
-                .toArray(String[]::new);
+            List<String> processedTables = new ArrayList<>();
+            
+            for (String tbl : tableArray) {
+                tbl = tbl.trim();
+                if (tbl.contains(".")) {
+                    // Table has database prefix (e.g., "db1.table1")
+                    processedTables.add(tbl);
+                } else {
+                    // Table without database prefix - not allowed in multi-database mode
+                    Thrower.errAndThrow("MYSQL-STREAMER", 
+                        String.format("TABLE '%s' MUST HAVE DATABASE PREFIX (e.g., 'database.table') IN MULTI-DATABASE MODE", tbl));
+                }
+            }
 
-            tableList = String.join(",", tableArray);
+            this.tableArray = processedTables.toArray(new String[0]);
+            tableList = String.join(",", this.tableArray);
         } else {
             this.tableArray = null;
         }
@@ -85,6 +115,17 @@ public class MySQLStreamer implements Streamer<String> {
         this.password = Validator.ensureNotEmpty("source.password", configJSON.getString("source.password"));
         this.timezone = Validator.withDefault(configJSON.getString("source.timezone"), "UTC");
         this.tableNameMap = configJSON.getJSONObject("table.name.map");
+
+        // Validate table name mapping requires database prefixes
+        if (this.tableNameMap != null) {
+            for (String key : this.tableNameMap.keySet()) {
+                if (!key.contains(".")) {
+                    Thrower.errAndThrow("MYSQL-STREAMER", 
+                        String.format("TABLE NAME MAPPING KEY '%s' MUST HAVE DATABASE PREFIX (e.g., 'database.table') IN MULTI-DATABASE MODE", key));
+                }
+            }
+            LOG.info(">>> [MYSQL-STREAMER] TABLE NAME MAPPING VALIDATED: {} entries", this.tableNameMap.size());
+        }
 
         String snapshotOverridesTablesString = configJSON.getString("snapshot.select.statement.overrides");
 
@@ -110,12 +151,14 @@ public class MySQLStreamer implements Streamer<String> {
             this.snapshotOverridesStatements = null;
         }
 
+        // Enhanced offset handling for multi-database
         String offsetValue = configJSON.getString("offset.value");
-
         if (!StringUtils.isNullOrWhitespaceOnly(offsetValue)) {
+            // Single offset for all databases - binlog is shared across all databases
             String[] offsetSplits = offsetValue.split(",");
             this.offsetFile = offsetSplits[0];
             this.offsetPos = Integer.parseInt(offsetSplits[1]);
+            LOG.info(">>> [MYSQL-STREAMER] OFFSET FOR ALL DATABASES: {}:{}", this.offsetFile, this.offsetPos);
         }
 
         this.startupMode = Validator.withDefault(configJSON.getString("startup.mode"), "initial");
@@ -253,7 +296,7 @@ public class MySQLStreamer implements Streamer<String> {
             .username(username)
             .serverId(serverIdRange)
             .password(password)
-            .databaseList(databaseName)
+            .databaseList(String.join(",", this.databaseNames))
             .tableList(tableList)
             .serverTimeZone(timezone)
             .scanNewlyAddedTableEnabled(true)
@@ -269,16 +312,66 @@ public class MySQLStreamer implements Streamer<String> {
 
     @Override
     public Map<String, Tuple2<OutputTag<String>, String>> createTagSchemaMap() {
-        final String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
         Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap = new HashMap<>();
 
         LOG.info(String.format(">>> [MYSQL-STREAMER] CONNECTING TO: %s@%s:%s", username, hostname, port));
 
-        try (Connection connection = DriverManager.getConnection(String.format("jdbc:mysql://%s:%d?tinyInt1isBit=false", hostname, port), username, password)) {
+        // Process each database
+        for (String dbName : this.databaseNames) {
+            createTagSchemaMapForDatabase(dbName, tagSchemaMap);
+            createDDLTableForDatabase(dbName, tagSchemaMap);
+        }
+
+        this.tagSchemaStringMap = tagSchemaMap.entrySet().stream()
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
+            ));
+
+        return tagSchemaStringMap;
+    }
+
+    private void createTagSchemaMapForDatabase(String dbName, Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap) {
+        final String sanitizedDatabaseName = Sanitizer.sanitize(dbName);
+        
+        try (Connection connection = DriverManager.getConnection(String.format("jdbc:mysql://%s:%d/%s?tinyInt1isBit=false", hostname, port, dbName), username, password)) {
             DatabaseMetaData metaData = connection.getMetaData();
-            ResultSet tables = metaData.getTables(databaseName, null, "%", new String[]{"TABLE"});
-            while (tables.next()) {
-                String tableName = tables.getString(3);
+            
+            // Get tables for this database
+            List<String> targetTables = new ArrayList<>();
+            if (tableArray != null) {
+                // Filter tables for this specific database
+                for (String tableWithDb : tableArray) {
+                    if (tableWithDb.startsWith(dbName + ".")) {
+                        String tableName = tableWithDb.substring(dbName.length() + 1); // Remove "dbName." prefix
+                        if ("*".equals(tableName)) {
+                            // Wildcard pattern - get all tables from this database
+                            LOG.info(">>> [MYSQL-STREAMER] WILDCARD PATTERN DETECTED FOR DATABASE: {}", dbName);
+                            ResultSet tables = metaData.getTables(dbName, null, "%", new String[]{"TABLE"});
+                            while (tables.next()) {
+                                targetTables.add(tables.getString(3));
+                            }
+                            break; // Exit the loop since we got all tables
+                        } else {
+                            // Specific table
+                            targetTables.add(tableName);
+                        }
+                    }
+                }
+            }
+            
+            // If no specific tables found for this database, get all tables
+            if (targetTables.isEmpty()) {
+                LOG.info(">>> [MYSQL-STREAMER] NO SPECIFIC TABLES FOUND FOR DATABASE: {}, GETTING ALL TABLES", dbName);
+                ResultSet tables = metaData.getTables(dbName, null, "%", new String[]{"TABLE"});
+                while (tables.next()) {
+                    targetTables.add(tables.getString(3));
+                }
+            }
+            
+            LOG.info(">>> [MYSQL-STREAMER] PROCESSING TABLES FOR DATABASE {}: {}", dbName, String.join(", ", targetTables));
+            
+            for (String tableName : targetTables) {
                 String sanitizedTableName = Sanitizer.sanitize(tableName);
                 if (!tableName.equals(sanitizedTableName)) {
                     LOG.warn(">>> [MYSQL-STREAMER] TABLE NAME IS SANITIZED: {} -> {}", tableName, sanitizedTableName);
@@ -287,16 +380,19 @@ public class MySQLStreamer implements Streamer<String> {
                 String mappedTableName;
                 String sanitizedMappedTableName = sanitizedTableName;
                 if (tableNameMap != null) {
-                    mappedTableName = tableNameMap.getString(tableName);
+                    // Use database.table format for table name mapping lookup
+                    String fullTableKey = dbName + "." + tableName;
+                    mappedTableName = tableNameMap.getString(fullTableKey);
                     if (mappedTableName != null) {
                         sanitizedMappedTableName = Sanitizer.sanitize(mappedTableName);
+                        LOG.info(">>> [MYSQL-STREAMER] TABLE NAME MAPPED: {} -> {}", fullTableKey, mappedTableName);
                     }
                 }
 
-                String mappedDatabaseName = databaseName;
+                String mappedDatabaseName = dbName;
                 String sanitizedMappedDatabaseName = sanitizedDatabaseName;
                 if (databaseNameMap != null) {
-                    mappedDatabaseName = databaseNameMap.getString(databaseName);
+                    mappedDatabaseName = databaseNameMap.getString(dbName);
                     if (mappedDatabaseName != null) {
                         sanitizedMappedDatabaseName = Sanitizer.sanitize(mappedDatabaseName);
                     }
@@ -308,12 +404,11 @@ public class MySQLStreamer implements Streamer<String> {
                     (!sanitizedTableName.equals(sanitizedMappedTableName) ? ("(" + sanitizedMappedTableName + ")") : "")
                 );
 
-                ResultSet columns = metaData.getColumns(databaseName, null, tableName, "%");
+                ResultSet columns = metaData.getColumns(dbName, null, tableName, "%");
 
                 SchemaBuilder.FieldAssembler<Schema> fieldAssembler = SchemaBuilder.record(sanitizedTableName).fields();
                 while (columns.next()) {
-                    String columnName = columns
-                        .getString("COLUMN_NAME");
+                    String columnName = columns.getString("COLUMN_NAME");
                     String sanitizedColumnName = Sanitizer.sanitize(columnName);
 
                     if (!columnName.equals(sanitizedColumnName)) {
@@ -340,24 +435,36 @@ public class MySQLStreamer implements Streamer<String> {
 
                 Schema avroSchema = fieldAssembler.endRecord();
 
-                final String outputTagID = String.format("%s__%s", sanitizedMappedDatabaseName, sanitizedTableName);
+                // Use database.table as the key to avoid conflicts across databases
+                String tagKey = String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedMappedTableName);
+                final String outputTagID = String.format("%s__%s", sanitizedMappedDatabaseName, sanitizedMappedTableName);
                 final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {};
-                tagSchemaMap.put(sanitizedTableName, Tuple2.of(outputTag, avroSchema));
+                tagSchemaMap.put(tagKey, Tuple2.of(outputTag, avroSchema));
 
                 LOG.info(String.valueOf(avroSchema));
             }
         } catch (SQLException e) {
             Thrower.errAndThrow(
                 "MYSQL-STREAM",
-                String.format(">>> [MAIN] UNABLE TO CONNECT TO SOURCE, EXCEPTION: %s", e.getMessage())
+                String.format(">>> [MAIN] UNABLE TO CONNECT TO DATABASE %s, EXCEPTION: %s", dbName, e.getMessage())
             );
         }
+    }
 
-        // <<<
+    private void createDDLTableForDatabase(String dbName, Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap) {
+        final String sanitizedDatabaseName = Sanitizer.sanitize(dbName);
+        
+        // Apply database name mapping
+        String mappedDatabaseName = dbName;
+        String sanitizedMappedDatabaseName = sanitizedDatabaseName;
+        if (databaseNameMap != null) {
+            mappedDatabaseName = databaseNameMap.getString(dbName);
+            if (mappedDatabaseName != null) {
+                sanitizedMappedDatabaseName = Sanitizer.sanitize(mappedDatabaseName);
+            }
+        }
 
-        // >>> CAPTURE DDL STATEMENTS TO SPECIAL DDL TABLE
-
-        final String sanitizedDDLTableName = String.format("_%s_ddl", sanitizedDatabaseName);
+        final String sanitizedDDLTableName = String.format("_%s_ddl", sanitizedMappedDatabaseName);
         SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(sanitizedDDLTableName).fields();
 
         AVROUtils.addFieldToFieldAssembler(ddlFieldAssembler, "_ddl", "VARCHAR", false);
@@ -368,37 +475,47 @@ public class MySQLStreamer implements Streamer<String> {
 
         Schema ddlAvroSchema = ddlFieldAssembler.endRecord();
 
-        final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedDDLTableName);
+        String tagKey = String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedDDLTableName);
+        final String outputTagID = String.format("%s__%s", sanitizedMappedDatabaseName, sanitizedDDLTableName);
         final OutputTag<String> ddlOutputTag = new OutputTag<>(outputTagID) {};
 
-        tagSchemaMap.put(sanitizedDDLTableName, Tuple2.of(ddlOutputTag, ddlAvroSchema));
+        tagSchemaMap.put(tagKey, Tuple2.of(ddlOutputTag, ddlAvroSchema));
 
         LOG.info(
-            ">>> [MAIN] TAG-SCHEMA MAP FOR: {}", String.format("%s.%s", sanitizedDatabaseName, sanitizedDDLTableName)
+            ">>> [MAIN] TAG-SCHEMA MAP FOR: {}", String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedDDLTableName)
         );
         LOG.info(String.valueOf(ddlAvroSchema));
-
-        this.tagSchemaStringMap = tagSchemaMap.entrySet().stream()
-            .collect(Collectors.toMap(
-                Map.Entry::getKey,
-                entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
-            ));
-
-        return tagSchemaStringMap;
     }
 
     @Override
     public SingleOutputStreamOperator<String> createMainDataStream(DataStream<String> sourceStream) {
         JSONObject snapshotConfig = new JSONObject();
         snapshotConfig.put("snapshot.only", snapshotOnly);
-        snapshotConfig.put("source.table.array", tableArray);
+
+        // Convert database name map to Map<String, String> for SideInputProcessFunction
+        Map<String, String> databaseNameMapForFunction = null;
+        if (databaseNameMap != null) {
+            databaseNameMapForFunction = new HashMap<>();
+            for (String key : databaseNameMap.keySet()) {
+                databaseNameMapForFunction.put(key, databaseNameMap.getString(key));
+            }
+        }
+
+        // Convert table name map to Map<String, String> for SideInputProcessFunction
+        Map<String, String> tableNameMapForFunction = null;
+        if (tableNameMap != null) {
+            tableNameMapForFunction = new HashMap<>();
+            for (String key : tableNameMap.keySet()) {
+                tableNameMapForFunction.put(key, tableNameMap.getString(key));
+            }
+        }
 
         return sourceStream
             .keyBy(new NullByteKeySelector<>())
             .process(new DelayedStopSignalProcessFunction(snapshotConfig))
             .setParallelism(1)
             .keyBy(new NullByteKeySelector<>())
-            .process(new SideInputProcessFunction(tagSchemaStringMap))
+            .process(new SideInputProcessFunction(tagSchemaStringMap, databaseNameMapForFunction, tableNameMapForFunction))
             .setParallelism(1);
     }
 }

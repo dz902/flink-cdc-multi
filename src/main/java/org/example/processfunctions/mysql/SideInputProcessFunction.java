@@ -9,15 +9,28 @@ import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.example.utils.Sanitizer;
 
 import java.util.Map;
 
 public class SideInputProcessFunction extends KeyedProcessFunction<Byte, String, String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
     private final Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap;
+    private final Map<String, String> databaseNameMap;
+    private final Map<String, String> tableNameMap;
 
     public SideInputProcessFunction(Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap) {
+        this(tagSchemaStringMap, null, null);
+    }
+
+    public SideInputProcessFunction(Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap, Map<String, String> databaseNameMap) {
+        this(tagSchemaStringMap, databaseNameMap, null);
+    }
+
+    public SideInputProcessFunction(Map<String, Tuple2<OutputTag<String>, String>> tagSchemaStringMap, Map<String, String> databaseNameMap, Map<String, String> tableNameMap) {
         this.tagSchemaStringMap = tagSchemaStringMap;
+        this.databaseNameMap = databaseNameMap;
+        this.tableNameMap = tableNameMap;
     }
 
     @Override
@@ -35,8 +48,12 @@ public class SideInputProcessFunction extends KeyedProcessFunction<Byte, String,
         JSONObject valueJSONObject = JSONObject.parseObject(value);
         String sanitizedTableName = valueJSONObject
             .getString("_tbl");
+        String sanitizedDatabaseName = valueJSONObject.getString("_db");
+        String originalDatabaseName = valueJSONObject.getString("_database");
+        LOG.debug(">>> [STOP-SIGNAL-CHECKER] CDC STREAM SENT: db={}, tbl={}, original_db={}", sanitizedDatabaseName, sanitizedTableName, originalDatabaseName);
         valueJSONObject.remove("_tbl");
         valueJSONObject.remove("_db");
+        valueJSONObject.remove("_database");
 
         // REMOVE BINLOG INFO, THESE ARE ONLY FOR BINLOG OFFSET WRITE BACK
 
@@ -47,15 +64,62 @@ public class SideInputProcessFunction extends KeyedProcessFunction<Byte, String,
 
         String filteredValue = JSON.toJSONString(valueJSONObject, SerializerFeature.WriteMapNullValue);
 
-        Tuple2<OutputTag<String>, String> tagSchemaTuple = tagSchemaStringMap.get(sanitizedTableName);
+        // Sanitize the table and database names for lookup (transparent to user)
+        String sanitizedTableNameForLookup = Sanitizer.sanitize(sanitizedTableName);
+        String sanitizedDatabaseNameForLookup = Sanitizer.sanitize(sanitizedDatabaseName);
+        
+        // Apply database name mapping if available
+        if (databaseNameMap != null) {
+            LOG.debug(">>> [STOP-SIGNAL-CHECKER] LOOKING UP DATABASE MAPPING FOR: {}", sanitizedDatabaseNameForLookup);
+            LOG.debug(">>> [STOP-SIGNAL-CHECKER] DATABASE NAME MAP CONTENTS: {}", databaseNameMap.keySet());
+            String mappedDatabaseName = databaseNameMap.get(sanitizedDatabaseNameForLookup);
+            LOG.debug(">>> [STOP-SIGNAL-CHECKER] DATABASE MAPPING LOOKUP RESULT: {} -> {}", sanitizedDatabaseNameForLookup, mappedDatabaseName);
+            if (mappedDatabaseName != null) {
+                sanitizedDatabaseNameForLookup = Sanitizer.sanitize(mappedDatabaseName);
+                LOG.debug(">>> [STOP-SIGNAL-CHECKER] DATABASE NAME MAPPED: {} -> {}", sanitizedDatabaseName, sanitizedDatabaseNameForLookup);
+            } else {
+                LOG.debug(">>> [STOP-SIGNAL-CHECKER] NO DATABASE MAPPING FOUND FOR: {}", sanitizedDatabaseNameForLookup);
+            }
+        }
+        
+        // Apply table name mapping if available (using original database.table key)
+        // The table mapping uses the original database and table names from the CDC stream (before sanitization)
+        // Reconstruct original table name by reversing the sanitization
+        String originalTableName = sanitizedTableName.replace('_', '-');
+        String originalFullKey = originalDatabaseName + "." + originalTableName;
+        LOG.debug(">>> [STOP-SIGNAL-CHECKER] LOOKING UP TABLE MAPPING FOR KEY: {}", originalFullKey);
+        LOG.debug(">>> [STOP-SIGNAL-CHECKER] TABLE NAME MAP CONTENTS: {}", tableNameMap != null ? tableNameMap.keySet() : "null");
+        if (tableNameMap != null) {
+            String mappedTableName = tableNameMap.get(originalFullKey);
+            LOG.debug(">>> [STOP-SIGNAL-CHECKER] TABLE MAPPING LOOKUP RESULT: {} -> {}", originalFullKey, mappedTableName);
+            if (mappedTableName != null) {
+                sanitizedTableNameForLookup = Sanitizer.sanitize(mappedTableName);
+                LOG.debug(">>> [STOP-SIGNAL-CHECKER] TABLE NAME MAPPED: {} -> {}", originalFullKey, sanitizedTableNameForLookup);
+            } else {
+                LOG.debug(">>> [STOP-SIGNAL-CHECKER] NO TABLE MAPPING FOUND FOR KEY: {}", originalFullKey);
+                // Keep the original sanitized table name if no mapping found
+                sanitizedTableNameForLookup = sanitizedTableName;
+            }
+        } else {
+            // No table mapping available, use original sanitized table name
+            sanitizedTableNameForLookup = sanitizedTableName;
+        }
+        
+        // Construct the full database.table key for lookup using sanitized names
+        String fullTableKey = sanitizedDatabaseNameForLookup + "." + sanitizedTableNameForLookup;
+        LOG.debug(">>> [STOP-SIGNAL-CHECKER] FINAL LOOKUP KEY: {}", fullTableKey);
+        
+        Tuple2<OutputTag<String>, String> tagSchemaTuple = tagSchemaStringMap.get(fullTableKey);
         if (tagSchemaTuple != null) {
             LOG.debug(">>> [STOP-SIGNAL-CHECKER] SIDE OUTPUT TO: {}", tagSchemaTuple.f0);
             LOG.trace(filteredValue);
             ctx.output(tagSchemaTuple.f0, filteredValue);
         } else {
-            LOG.error(">>> [STOP-SIGNAL-CHECKER] UNKNOWN TABLE: {}", sanitizedTableName);
-            LOG.error(tagSchemaStringMap.toString());
-            throw new RuntimeException();
+            LOG.error(">>> [STOP-SIGNAL-CHECKER] UNKNOWN TABLE: {} (original: {}.{})", fullTableKey, sanitizedDatabaseName, sanitizedTableName);
+            LOG.error(">>> [STOP-SIGNAL-CHECKER] AVAILABLE TABLES: {}", 
+                String.join(", ", tagSchemaStringMap.keySet()));
+            LOG.error(">>> [STOP-SIGNAL-CHECKER] RECEIVED DATA: {}", value);
+            throw new RuntimeException(">>> [STOP-SIGNAL-CHECKER] UNKNOWN TABLE: " + fullTableKey + " " + String.join(", ", tagSchemaStringMap.keySet()));
         }
     }
 }
