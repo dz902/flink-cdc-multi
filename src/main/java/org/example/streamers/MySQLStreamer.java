@@ -476,7 +476,7 @@ public class MySQLStreamer implements Streamer<String> {
         Schema ddlAvroSchema = ddlFieldAssembler.endRecord();
 
         String tagKey = String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedDDLTableName);
-        final String outputTagID = String.format("%s__%s", sanitizedMappedDatabaseName, sanitizedDDLTableName);
+        final String outputTagID = String.format("%s_ddl", sanitizedMappedDatabaseName);
         final OutputTag<String> ddlOutputTag = new OutputTag<>(outputTagID) {};
 
         tagSchemaMap.put(tagKey, Tuple2.of(ddlOutputTag, ddlAvroSchema));

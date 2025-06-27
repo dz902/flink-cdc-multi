@@ -105,6 +105,14 @@ public class SideInputProcessFunction extends KeyedProcessFunction<Byte, String,
             sanitizedTableNameForLookup = sanitizedTableName;
         }
         
+        // Special handling for DDL tables: if this is a DDL table, reconstruct the correct DDL table name
+        // using the mapped database name (since DDL table names are created with database name prefix)
+        if (sanitizedTableNameForLookup.startsWith("_") && sanitizedTableNameForLookup.endsWith("_ddl")) {
+            // This is a DDL table, reconstruct the name using the mapped database name
+            sanitizedTableNameForLookup = "_" + sanitizedDatabaseNameForLookup + "_ddl";
+            LOG.debug(">>> [STOP-SIGNAL-CHECKER] DDL TABLE NAME RECONSTRUCTED: {} -> {}", sanitizedTableName, sanitizedTableNameForLookup);
+        }
+        
         // Construct the full database.table key for lookup using sanitized names
         String fullTableKey = sanitizedDatabaseNameForLookup + "." + sanitizedTableNameForLookup;
         LOG.debug(">>> [STOP-SIGNAL-CHECKER] FINAL LOOKUP KEY: {}", fullTableKey);

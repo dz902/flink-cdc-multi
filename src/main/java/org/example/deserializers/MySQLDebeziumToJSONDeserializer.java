@@ -65,8 +65,8 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
                 throw new RuntimeException(msg);
             }
 
-            String sanitizedDatabaseName = databaseName.replace('-', '_');
-            String sanitizedTableName = tableName.replace('-', '_');
+            String sanitizedDatabaseName = Sanitizer.sanitize(databaseName);
+            String sanitizedTableName = Sanitizer.sanitize(tableName);
 
             ddlObject.put("_db", sanitizedDatabaseName);
             ddlObject.put("_tbl", String.format("_%s_ddl", sanitizedDatabaseName));
