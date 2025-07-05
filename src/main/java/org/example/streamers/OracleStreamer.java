@@ -15,8 +15,8 @@ import org.apache.flink.util.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.example.deserializers.OracleDebeziumToJSONDeserializer;
-import org.example.processfunctions.mysql.DelayedStopSignalProcessFunction;
-import org.example.processfunctions.mysql.SideInputProcessFunction;
+import org.example.processfunctions.oracle.DelayedStopSignalProcessFunction;
+import org.example.processfunctions.oracle.SideInputProcessFunction;
 import org.example.utils.AVROUtils;
 import org.example.utils.Sanitizer;
 import org.example.utils.Thrower;
@@ -110,7 +110,7 @@ public class OracleStreamer implements Streamer<String> {
             }
         }
 
-        this.snapshotOnly = Boolean.parseBoolean(configJSON.getString("snapshot.only"));
+        this.snapshotOnly = Validator.withDefault(configJSON.getBooleanValue("snapshot.only"), false);
 
         if (snapshotOnly) {
             LOG.info(">>> [ORACLE-STREAMER] SNAPSHOT ONLY MODE, STARTUP MODE CHANGED: {} -> initial", startupMode);
@@ -119,6 +119,9 @@ public class OracleStreamer implements Streamer<String> {
         this.splitSize = Validator.withDefault(configJSON.getIntValue("oracle.split.size"), 4096);
         this.fetchSize = Validator.withDefault(configJSON.getIntValue("oracle.fetch.size"), 1024);
         this.logminerParallelism = Validator.withDefault(configJSON.getIntValue("oracle.logminer.parallelism"), 1);
+        
+        // Create tag schema map in constructor so it's available for the deserializer
+        this.tagSchemaStringMap = createTagSchemaMap();
     }
 
     @Override
@@ -147,6 +150,10 @@ public class OracleStreamer implements Streamer<String> {
         debeziumProperties.setProperty("decimal.handling.mode", "string");
         debeziumProperties.setProperty("database.history.skip.unparseable.ddl", "false");
         debeziumProperties.setProperty("database.history.store.only.monitored.tables.ddl", "true");
+        debeziumProperties.setProperty("database.history.store.only.captured.tables.ddl", "true");
+        debeziumProperties.setProperty("database.history.store.only.monitored.tables.ddl", "true");
+        debeziumProperties.setProperty("include.schema.changes", "false");
+        debeziumProperties.setProperty("database.history.skip.unparseable.ddl", "true");
         //debeziumProperties.setProperty("database.pdb.name", pdbName);
 
         return OracleSourceBuilder.OracleIncrementalSource.<String>builder()
@@ -181,9 +188,13 @@ public class OracleStreamer implements Streamer<String> {
             DatabaseMetaData metaData = connection.getMetaData();
             ResultSet tables = metaData.getTables(null, schemaName, "%", new String[]{"TABLE"});
             List<String> actualTableNames = Arrays.stream(tableArray).map(t -> t.contains(".") ? t.substring(t.lastIndexOf('.') + 1) : t).collect(Collectors.toList());
+            LOG.info(">>> [ORACLE-STREAMER] TABLE ARRAY: {}", Arrays.toString(tableArray));
+            LOG.info(">>> [ORACLE-STREAMER] ACTUAL TABLE NAMES: {}", actualTableNames);
             while (tables.next()) {
                 String tableName = tables.getString(3);
+                LOG.debug(">>> [ORACLE-STREAMER] FOUND TABLE: {}", tableName);
                 if (!actualTableNames.contains(tableName)) {
+                    LOG.debug(">>> [ORACLE-STREAMER] SKIPPING TABLE: {} (not in target list)", tableName);
                     continue;
                 }
                 String sanitizedTableName = Sanitizer.sanitize(tableName);
@@ -197,6 +208,7 @@ public class OracleStreamer implements Streamer<String> {
                     mappedTableName = tableNameMap.getString(tableName);
                     if (mappedTableName != null) {
                         sanitizedMappedTableName = Sanitizer.sanitize(mappedTableName);
+                        LOG.info(">>> [ORACLE-STREAMER] TABLE NAME MAPPED: {} -> {}", tableName, mappedTableName);
                     }
                 }
 
@@ -241,14 +253,17 @@ public class OracleStreamer implements Streamer<String> {
 
                 AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_op", "VARCHAR", false);
                 AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_ts", "BIGINT", false);
-                AVROUtils.addFieldToFieldAssembler(fieldAssembler, "_scn", "VARCHAR", false);
 
                 Schema avroSchema = fieldAssembler.endRecord();
 
                 final String outputTagID = String.format("%s__%s", sanitizedMappedDatabaseName, sanitizedMappedTableName);
                 final OutputTag<String> outputTag = new OutputTag<>(outputTagID) {
                 };
-                tagSchemaMap.put(sanitizedTableName, Tuple2.of(outputTag, avroSchema));
+                // Use database.table as the key to avoid conflicts across databases
+                // Use mapped table name for the key, consistent with MySQL
+                String tagKey = String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedMappedTableName);
+                LOG.info(">>> [ORACLE-STREAMER] CREATING TAG KEY: {} -> {}", tagKey, outputTagID);
+                tagSchemaMap.put(tagKey, Tuple2.of(outputTag, avroSchema));
 
                 LOG.info(String.valueOf(avroSchema));
             }
@@ -261,34 +276,43 @@ public class OracleStreamer implements Streamer<String> {
 
         // >>> CAPTURE DDL STATEMENTS TO SPECIAL DDL TABLE
 
-        final String sanitizedDDLTableName = String.format("_%s_ddl", sanitizedDatabaseName);
+        // Apply database name mapping for DDL table as well
+        String mappedDatabaseName = databaseName;
+        String sanitizedMappedDatabaseName = sanitizedDatabaseName;
+        if (databaseNameMap != null) {
+            mappedDatabaseName = databaseNameMap.getString(databaseName);
+            if (mappedDatabaseName != null) {
+                sanitizedMappedDatabaseName = Sanitizer.sanitize(mappedDatabaseName);
+            }
+        }
+
+        final String sanitizedDDLTableName = String.format("_%s_ddl", sanitizedMappedDatabaseName);
         SchemaBuilder.FieldAssembler<Schema> ddlFieldAssembler = SchemaBuilder.record(sanitizedDDLTableName).fields();
 
         AVROUtils.addFieldToFieldAssembler(ddlFieldAssembler, "_ddl", "VARCHAR", false);
         AVROUtils.addFieldToFieldAssembler(ddlFieldAssembler, "_ddl_tbl", "VARCHAR", false);
         AVROUtils.addFieldToFieldAssembler(ddlFieldAssembler, "_ts", "BIGINT", false);
-        AVROUtils.addFieldToFieldAssembler(ddlFieldAssembler, "_scn", "VARCHAR", false);
 
         Schema ddlAvroSchema = ddlFieldAssembler.endRecord();
 
-        final String outputTagID = String.format("%s__%s", sanitizedDatabaseName, sanitizedDDLTableName);
+        final String outputTagID = String.format("%s__%s", sanitizedMappedDatabaseName, sanitizedDDLTableName);
         final OutputTag<String> ddlOutputTag = new OutputTag<>(outputTagID) {
         };
 
-        tagSchemaMap.put(sanitizedDDLTableName, Tuple2.of(ddlOutputTag, ddlAvroSchema));
+        // Use database.table as the key for DDL table as well
+        String ddlTagKey = String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedDDLTableName);
+        tagSchemaMap.put(ddlTagKey, Tuple2.of(ddlOutputTag, ddlAvroSchema));
 
         LOG.info(
-            ">>> [MAIN] TAG-SCHEMA MAP FOR: {}", String.format("%s.%s", sanitizedDatabaseName, sanitizedDDLTableName)
+            ">>> [MAIN] TAG-SCHEMA MAP FOR: {}", String.format("%s.%s", sanitizedMappedDatabaseName, sanitizedDDLTableName)
         );
         LOG.info(String.valueOf(ddlAvroSchema));
 
-        this.tagSchemaStringMap = tagSchemaMap.entrySet().stream()
+        return tagSchemaMap.entrySet().stream()
             .collect(Collectors.toMap(
                 Map.Entry::getKey,
                 entry -> Tuple2.of(entry.getValue().f0, entry.getValue().f1.toString())
             ));
-
-        return tagSchemaStringMap;
     }
 
     @Override
@@ -297,12 +321,30 @@ public class OracleStreamer implements Streamer<String> {
         snapshotConfig.put("snapshot.only", snapshotOnly);
         snapshotConfig.put("source.table.array", tableArray);
 
+        // Convert database name map to Map<String, String> for SideInputProcessFunction
+        Map<String, String> databaseNameMapForFunction = null;
+        if (databaseNameMap != null) {
+            databaseNameMapForFunction = new HashMap<>();
+            for (String key : databaseNameMap.keySet()) {
+                databaseNameMapForFunction.put(key, databaseNameMap.getString(key));
+            }
+        }
+
+        // Convert table name map to Map<String, String> for SideInputProcessFunction
+        Map<String, String> tableNameMapForFunction = null;
+        if (tableNameMap != null) {
+            tableNameMapForFunction = new HashMap<>();
+            for (String key : tableNameMap.keySet()) {
+                tableNameMapForFunction.put(key, tableNameMap.getString(key));
+            }
+        }
+
         return sourceStream
             .keyBy(new NullByteKeySelector<>())
             .process(new DelayedStopSignalProcessFunction(snapshotConfig))
             .setParallelism(1)
             .keyBy(new NullByteKeySelector<>())
-            .process(new SideInputProcessFunction(tagSchemaStringMap))
+            .process(new SideInputProcessFunction(tagSchemaStringMap, databaseNameMapForFunction, tableNameMapForFunction))
             .setParallelism(1);
     }
 } 

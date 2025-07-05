@@ -1,11 +1,11 @@
 package org.example.deserializers;
 
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.ververica.cdc.debezium.DebeziumDeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.util.Collector;
 import org.apache.kafka.connect.data.Field;
-import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.logging.log4j.LogManager;
@@ -13,7 +13,6 @@ import org.apache.logging.log4j.Logger;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class OracleDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
@@ -29,6 +28,10 @@ public class OracleDebeziumToJSONDeserializer implements DebeziumDeserialization
         // Use current time if timestamp is 0 or not set
         ts = ts < 1 ? System.currentTimeMillis() : ts;
         String scn = source.getString("scn");
+        // Ensure SCN is not null for Avro compatibility
+        if (scn == null || scn.isEmpty()) {
+            scn = "0";
+        }
 
         // Get database, schema, and table from source struct
         String database = source.getString("db");
@@ -65,20 +68,22 @@ public class OracleDebeziumToJSONDeserializer implements DebeziumDeserialization
         jsonObject.put("_db", database);
         jsonObject.put("_schema", schema);
         jsonObject.put("_tbl", table);
-
-        String jsonString = jsonObject.toJSONString();
+        
+        String jsonString = jsonObject.toString(SerializerFeature.WriteMapNullValue);
+        LOG.debug(">>> [ORACLE-DESERIALIZER] OUTPUT JSON: {}", jsonString);
+        LOG.debug(">>> [ORACLE-DESERIALIZER] JSON LENGTH: {}", jsonString.length());
+        LOG.debug(">>> [ORACLE-DESERIALIZER] JSON KEYS: {}", jsonObject.keySet());
         out.collect(jsonString);
     }
 
     private JSONObject structToJson(Struct struct) {
         JSONObject jsonObject = new JSONObject();
-        Schema schema = struct.schema();
-        List<Field> fields = schema.fields();
-
-        for (Field field : fields) {
+        
+        // Convert struct to JSON by iterating through all fields
+        for (Field field : struct.schema().fields()) {
             String fieldName = field.name();
             Object value = struct.get(field);
-
+            
             if (value instanceof Struct) {
                 jsonObject.put(fieldName, structToJson((Struct) value));
             } else if (value instanceof List) {
@@ -105,27 +110,22 @@ public class OracleDebeziumToJSONDeserializer implements DebeziumDeserialization
                 }
                 jsonObject.put(fieldName, mapJson);
             } else {
-                JSONObject valueObject = new JSONObject();
-                String type;
-                LOG.info(String.format(">>>>> %s = %s = %s", field, Objects.nonNull(value) ? value.getClass() : "NULL", Objects.nonNull(value) ? "null" : String.valueOf(value)));
-                if (value instanceof Integer || value instanceof Short) {
-                    type = "string";
-                    value = String.valueOf(value);
-                } else if (value instanceof Long) {
-                    type = "string";
-                    value = String.valueOf(value);
-                } else if (value instanceof Float) {
-                    type = "float";
-                } else if (value instanceof Double) {
-                    type = "double";
-                } else if (value instanceof Boolean) {
-                    type = "boolean";
+                // Handle null values properly for Avro union types
+                if (value != null) {
+                    // Convert all values to strings for consistency with Avro schema
+                    String stringValue = String.valueOf(value);
+                    // Handle special cases where Oracle returns problematic values
+                    if (!"null".equals(stringValue) && !"".equals(stringValue.trim())) {
+                        // Create nested object for Avro union type compatibility
+                        JSONObject valueObject = new JSONObject();
+                        valueObject.put("string", stringValue);
+                        jsonObject.put(fieldName, valueObject);
+                    } else {
+                        jsonObject.put(fieldName, null);
+                    }
                 } else {
-                    type = "string";
-                    value = String.valueOf(value);
+                    jsonObject.put(fieldName, null);
                 }
-                valueObject.put(type, value);
-                jsonObject.put(fieldName, valueObject);
             }
         }
 
