@@ -45,11 +45,17 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
         if (snapshotOnly) {
             String op = valueJSONObject.getString("_op");
 
+            // Always forward the record first, regardless of operation type
+            LOG.debug(">>> [STOP-SIGNAL-SENDER] FORWARDING RECORD: {}", value);
+            out.collect(value);
+
+            // Check if snapshot is complete (non-read operation detected)
             if (!"READ".equals(op)) {
-                LOG.info(">>> [STOP-SIGNAL-SENDER] SNAPSHOT COMPLETE, SENDING STOP SIGNAL");
+                LOG.info(">>> [STOP-SIGNAL-SENDER] NON-READ OPERATION DETECTED (op: {}), SNAPSHOT COMPLETE, SENDING STOP SIGNAL", op);
                 setTimer(ctx);
-                return;
             }
+            
+            return;
         }
 
         out.collect(value);
