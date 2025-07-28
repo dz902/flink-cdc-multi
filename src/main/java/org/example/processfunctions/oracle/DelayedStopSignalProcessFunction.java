@@ -26,14 +26,15 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
     private transient ValueState<Long> timerState;
     private transient ValueState<Boolean> stopSignalState;
     private transient ValueState<Set<String>> processedTablesState;
+    private transient ValueState<Set<String>> completedTablesState;
     private transient ValueState<Boolean> snapshotCompleteState;
 
     public DelayedStopSignalProcessFunction(JSONObject config) {
         snapshotOnly = Validator.withDefault(config.getBoolean("snapshot.only"), false);
         tableArray = Validator.withDefault(config.getJSONArray("source.table.array"), null);
 
-        LOG.debug("[STOP-SIGNAL-SENDER] SNAPSHOT ONLY: {}", snapshotOnly);
-        LOG.debug("[STOP-SIGNAL-SENDER] TARGET TABLE LIST: {}", tableArray);
+        LOG.info("[STOP-SIGNAL-SENDER] SNAPSHOT ONLY: {}", snapshotOnly);
+        LOG.info("[STOP-SIGNAL-SENDER] TARGET TABLE LIST: {}", tableArray);
     }
 
     @Override
@@ -47,30 +48,47 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
         ValueStateDescriptor<Set<String>> processedTablesStateDescriptor = new ValueStateDescriptor<>("processedTablesState", TypeInformation.of(new TypeHint<Set<String>>() {}));
         processedTablesState = getRuntimeContext().getState(processedTablesStateDescriptor);
 
+        ValueStateDescriptor<Set<String>> completedTablesStateDescriptor = new ValueStateDescriptor<>("completedTablesState", TypeInformation.of(new TypeHint<Set<String>>() {}));
+        completedTablesState = getRuntimeContext().getState(completedTablesStateDescriptor);
+
         ValueStateDescriptor<Boolean> snapshotCompleteStateDescriptor = new ValueStateDescriptor<>("snapshotCompleteState", Boolean.class);
         snapshotCompleteState = getRuntimeContext().getState(snapshotCompleteStateDescriptor);
     }
 
     @Override
     public void processElement(String value, Context ctx, Collector<String> out) throws Exception {
-        if (Boolean.TRUE.equals(stopSignalState.value())) {
-            // IGNORE MESSAGE WHEN STOP SIGNAL IS SENT
-            return;
-        }
-
         JSONObject valueJSONObject = JSONObject.parseObject(value);
 
         if (snapshotOnly) {
             String op = valueJSONObject.getString("_op");
             String table = valueJSONObject.getString("_tbl");
             String database = valueJSONObject.getString("_db");
-            String tableKey = database + "." + table;
+            String schema = valueJSONObject.getString("_schema");
+            
+            // Use schema.table format to match Oracle streamer's tableArray format
+            String tableKey = schema + "." + table;
+            
+            LOG.info(">>> [STOP-SIGNAL-SENDER] Processing record - tableKey: {}, op: {}, database: {}, schema: {}, table: {}", 
+                    tableKey, op, database, schema, table);
+
+            // Check if snapshot is already complete
+            if (Boolean.TRUE.equals(snapshotCompleteState.value())) {
+                // Snapshot is complete, check if this is a non-read operation
+                if (!"r".equals(op)) {
+                    String msg = String.format("SNAPSHOT COMPLETE BUT NON-READ OPERATION DETECTED: table=%s, op=%s, MANUAL INTERVENTION IS NEEDED", tableKey, op);
+                    LOG.error(">>> [STOP-SIGNAL-SENDER] {}", msg);
+                    throw new RuntimeException(msg);
+                }
+                // If it's a read operation after snapshot complete, ignore it
+                LOG.info(">>> [STOP-SIGNAL-SENDER] Snapshot complete, ignoring READ operation for table: {}", tableKey);
+                return;
+            }
 
             // Always forward the record first, regardless of operation type
             LOG.debug(">>> [STOP-SIGNAL-SENDER] FORWARDING RECORD: {}", value);
             out.collect(value);
 
-            // Track processed tables for snapshot completion
+            // Track processed tables (tables that have received any records)
             Set<String> processedTables = processedTablesState.value();
             if (processedTables == null) {
                 processedTables = new HashSet<>();
@@ -78,33 +96,60 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
             processedTables.add(tableKey);
             processedTablesState.update(processedTables);
 
-            // Check if snapshot is complete (all tables have received non-read operations)
+            // Track completed tables (tables that have received non-read operations)
+            Set<String> completedTables = completedTablesState.value();
+            if (completedTables == null) {
+                completedTables = new HashSet<>();
+            }
+
+            // Check if this is a non-read operation
             if (!"r".equals(op)) {
                 LOG.info(">>> [STOP-SIGNAL-SENDER] NON-READ OPERATION DETECTED FOR TABLE: {} (op: {})", tableKey, op);
+                completedTables.add(tableKey);
+                completedTablesState.update(completedTables);
                 
-                // Check if we have processed all target tables
-                boolean allTablesProcessed = true;
+                LOG.info(">>> [STOP-SIGNAL-SENDER] Updated completedTables: {}", completedTables);
+                
+                // Check if all target tables have completed their snapshot
+                boolean allTablesCompleted = true;
                 if (tableArray != null && !tableArray.isEmpty()) {
+                    LOG.info(">>> [STOP-SIGNAL-SENDER] Checking completion for tableArray: {}", tableArray);
                     for (int i = 0; i < tableArray.size(); i++) {
                         String targetTable = tableArray.getString(i);
-                        if (!processedTables.contains(targetTable)) {
-                            allTablesProcessed = false;
-                            LOG.debug(">>> [STOP-SIGNAL-SENDER] WAITING FOR TABLE: {}", targetTable);
+                        LOG.info(">>> [STOP-SIGNAL-SENDER] Checking targetTable: {} in completedTables: {}", targetTable, completedTables);
+                        if (!completedTables.contains(targetTable)) {
+                            allTablesCompleted = false;
+                            LOG.info(">>> [STOP-SIGNAL-SENDER] WAITING FOR TABLE TO COMPLETE SNAPSHOT: {}", targetTable);
                             break;
                         }
                     }
+                } else {
+                    // If no specific table list, check if all processed tables have completed
+                    allTablesCompleted = processedTables.equals(completedTables);
+                    LOG.info(">>> [STOP-SIGNAL-SENDER] No tableArray specified, checking if all processed tables completed. processedTables: {}, completedTables: {}", 
+                            processedTables, completedTables);
                 }
 
-                if (allTablesProcessed) {
-                    LOG.info(">>> [STOP-SIGNAL-SENDER] ALL TABLES PROCESSED, SNAPSHOT COMPLETE, SENDING STOP SIGNAL");
+                if (allTablesCompleted) {
+                    LOG.info(">>> [STOP-SIGNAL-SENDER] ALL TABLES COMPLETED SNAPSHOT, SENDING STOP SIGNAL");
+                    LOG.info(">>> [STOP-SIGNAL-SENDER] Processed tables: {}", processedTables);
+                    LOG.info(">>> [STOP-SIGNAL-SENDER] Completed tables: {}", completedTables);
                     snapshotCompleteState.update(true);
                     setTimer(ctx);
                 } else {
-                    LOG.info(">>> [STOP-SIGNAL-SENDER] WAITING FOR ALL TABLES TO COMPLETE SNAPSHOT. Processed: {}, Target: {}", 
-                            processedTables, tableArray);
+                    LOG.info(">>> [STOP-SIGNAL-SENDER] WAITING FOR ALL TABLES TO COMPLETE SNAPSHOT. Processed: {}, Completed: {}, Target: {}", 
+                            processedTables, completedTables, tableArray);
                 }
+            } else {
+                LOG.debug(">>> [STOP-SIGNAL-SENDER] READ OPERATION FOR TABLE: {} (op: {})", tableKey, op);
             }
             
+            return;
+        }
+
+        // Non-snapshot mode: check if stop signal is already sent
+        if (Boolean.TRUE.equals(stopSignalState.value())) {
+            // IGNORE MESSAGE WHEN STOP SIGNAL IS SENT
             return;
         }
 
