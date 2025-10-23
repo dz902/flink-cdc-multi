@@ -334,7 +334,12 @@ public class MySQLStreamer implements Streamer<String> {
     private void createTagSchemaMapForDatabase(String dbName, Map<String, Tuple2<OutputTag<String>, Schema>> tagSchemaMap) {
         final String sanitizedDatabaseName = Sanitizer.sanitize(dbName);
         
-        try (Connection connection = DriverManager.getConnection(String.format("jdbc:mysql://%s:%d/%s?tinyInt1isBit=false", hostname, port, dbName), username, password)) {
+        // Enhanced connection string with comprehensive character encoding configuration
+        String connectionUrl = String.format(
+            "jdbc:mysql://%s:%d/%s?tinyInt1isBit=false&useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&zeroDateTimeBehavior=convertToNull&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&useCompression=true&characterSetResults=UTF-8",
+            hostname, port, dbName
+        );
+        try (Connection connection = DriverManager.getConnection(connectionUrl, username, password)) {
             DatabaseMetaData metaData = connection.getMetaData();
             
             // Get tables for this database

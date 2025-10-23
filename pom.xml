@@ -108,6 +108,12 @@ under the License.
 			<groupId>com.ververica</groupId>
 			<artifactId>flink-connector-oracle-cdc</artifactId>
 			<version>${flink.cdc.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>com.oracle.database.xml</groupId>
+					<artifactId>xmlparserv2</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.flink</groupId>

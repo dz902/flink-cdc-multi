@@ -119,7 +119,7 @@ public class OracleStreamer implements Streamer<String> {
         this.splitSize = Validator.withDefault(configJSON.getIntValue("oracle.split.size"), 4096);
         this.fetchSize = Validator.withDefault(configJSON.getIntValue("oracle.fetch.size"), 1024);
         this.logminerParallelism = Validator.withDefault(configJSON.getIntValue("oracle.logminer.parallelism"), 1);
-        
+
         // Create tag schema map in constructor so it's available for the deserializer
         this.tagSchemaStringMap = createTagSchemaMap();
     }
@@ -347,4 +347,4 @@ public class OracleStreamer implements Streamer<String> {
             .process(new SideInputProcessFunction(tagSchemaStringMap, databaseNameMapForFunction, tableNameMapForFunction))
             .setParallelism(1);
     }
-} 
+}

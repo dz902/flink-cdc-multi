@@ -17,6 +17,8 @@ import org.apache.flink.connector.file.sink.FileSink;
 import org.apache.flink.core.fs.FSDataInputStream;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.core.plugin.PluginManager;
+import org.apache.flink.core.plugin.PluginUtils;
 import org.apache.flink.formats.avro.typeutils.GenericRecordAvroTypeInfo;
 import org.apache.flink.formats.parquet.ParquetWriterFactory;
 import org.apache.flink.formats.parquet.avro.AvroParquetWriters;
@@ -28,11 +30,8 @@ import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.OnCheckpointRollingPolicy;
 import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.StringUtils;
-import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.core.LoggerContext;
-import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.example.bucketassigners.DateBucketAssigner;
 import org.example.processfunctions.common.StatusStoreProcessFunction;
 import org.example.processfunctions.mongodb.TimestampOffsetStoreProcessFunction;
@@ -459,17 +458,17 @@ public class FlinkCDCMulti {
     }
 
     private static void enableDebugMode(Boolean argDebugMode) {
-        if (argDebugMode) {
-            LOG.info(">>> [MAIN] DEBUG MODE");
-
-            LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
-            org.apache.logging.log4j.core.config.Configuration config = ctx.getConfiguration();
-
-            LoggerConfig loggerConfig = new LoggerConfig("flink-cdc-multi", Level.TRACE, true);
-            config.addLogger("flink-cdc-multi", loggerConfig);
-
-            ctx.updateLoggers();
-        }
+//        if (argDebugMode) {
+//            LOG.info(">>> [MAIN] DEBUG MODE");
+//
+//            LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
+//            org.apache.logging.log4j.core.config.Configuration config = ctx.getConfiguration();
+//
+//            LoggerConfig loggerConfig = new LoggerConfig("flink-cdc-multi", Level.TRACE, true);
+//            config.addLogger("flink-cdc-multi", loggerConfig);
+//
+//            ctx.updateLoggers();
+//        }
     }
 
     private static void loadConfigJSON(String argConfig) throws IOException {
@@ -533,7 +532,7 @@ public class FlinkCDCMulti {
     private static void initializeFileSystem() {
         // YOU MUST MANUALLY LOAD CONFIG FOR S3 REGION TO TAKE EFFECT
         // TODO: FIND OUT WHY
-        // PluginManager pluginManager = PluginUtils.createPluginManagerFromRootFolder(flinkConfig);
-        // FileSystem.initialize(flinkConfig, pluginManager);
+        PluginManager pluginManager = PluginUtils.createPluginManagerFromRootFolder(flinkConfig);
+        FileSystem.initialize(flinkConfig, pluginManager);
     }
 }

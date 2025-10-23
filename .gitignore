@@ -4,6 +4,7 @@
 /debug/
 /out/
 /plugins/
+### /deps/
 
 target/
 !.mvn/wrapper/maven-wrapper.jar
