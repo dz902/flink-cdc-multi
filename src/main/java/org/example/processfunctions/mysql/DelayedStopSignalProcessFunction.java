@@ -171,12 +171,12 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
             boolean nonStructuralStatementFound = ddlStatement.matches("(?i)(?s)(" +
                 "CREATE\\s+INDEX.*|" +
                 "DROP\\s+INDEX.*|" +
-                "ALTER\\s+TABLE.*ADD\\s+INDEX.*|" +
-                "ALTER\\s+TABLE.*DROP\\s+INDEX.*|" +
-                "ALTER\\s+TABLE.*ADD\\s+KEY.*|" +
-                "ALTER\\s+TABLE.*DROP\\s+KEY.*|" +
-                "ALTER\\s+TABLE.*ADD\\s+CONSTRAINT.*|" +
-                "ALTER\\s+TABLE.*DROP\\s+CONSTRAINT.*|" +
+//                "ALTER\\s+TABLE.*ADD\\s+INDEX.*|" +
+//                "ALTER\\s+TABLE.*DROP\\s+INDEX.*|" +
+//                "ALTER\\s+TABLE.*ADD\\s+KEY.*|" +
+//                "ALTER\\s+TABLE.*DROP\\s+KEY.*|" +
+//                "ALTER\\s+TABLE.*ADD\\s+CONSTRAINT.*|" +
+//                "ALTER\\s+TABLE.*DROP\\s+CONSTRAINT.*|" +
                 "ANALYZE\\s+TABLE.*|" +
                 "OPTIMIZE\\s+TABLE.*|" +
                 "REPAIR\\s+TABLE.*" +
