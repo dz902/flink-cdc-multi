@@ -171,18 +171,24 @@ public class DelayedStopSignalProcessFunction extends KeyedProcessFunction<Byte,
             boolean nonStructuralStatementFound = ddlStatement.matches("(?i)(?s)(" +
                 "CREATE\\s+INDEX.*|" +
                 "DROP\\s+INDEX.*|" +
-//                "ALTER\\s+TABLE.*ADD\\s+INDEX.*|" +
-//                "ALTER\\s+TABLE.*DROP\\s+INDEX.*|" +
-//                "ALTER\\s+TABLE.*ADD\\s+KEY.*|" +
-//                "ALTER\\s+TABLE.*DROP\\s+KEY.*|" +
-//                "ALTER\\s+TABLE.*ADD\\s+CONSTRAINT.*|" +
-//                "ALTER\\s+TABLE.*DROP\\s+CONSTRAINT.*|" +
+                "ALTER\\s+TABLE.*ADD\\s+INDEX.*|" +
+                "ALTER\\s+TABLE.*DROP\\s+INDEX.*|" +
+                "ALTER\\s+TABLE.*ADD\\s+KEY.*|" +
+                "ALTER\\s+TABLE.*DROP\\s+KEY.*|" +
+                "ALTER\\s+TABLE.*ADD\\s+CONSTRAINT.*|" +
+                "ALTER\\s+TABLE.*DROP\\s+CONSTRAINT.*|" +
                 "ANALYZE\\s+TABLE.*|" +
                 "OPTIMIZE\\s+TABLE.*|" +
                 "REPAIR\\s+TABLE.*" +
                 ")");
 
-            if (nonStructuralStatementFound) {
+            boolean structuralStatementFound = ddlStatement.matches("(?i)(?s)(" +
+                "ADD\\s+COLUMN.*|" +
+                "DROP\\s+COLUMN.*|" +
+                "MODIFY\\s+COLUMN.*" +
+                ")");
+
+            if (nonStructuralStatementFound && !structuralStatementFound) {
                 LOG.info(">>> [STOP-SIGNAL-SENDER] NON-STRUCTURAL DDL FOUND IGNORED: {}", ddlStatement);
                 LOG.debug(ddlStatement);
                 return;
