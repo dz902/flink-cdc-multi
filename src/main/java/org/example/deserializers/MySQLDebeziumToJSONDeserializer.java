@@ -15,12 +15,26 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.example.utils.Sanitizer;
 
+import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationSchema<String> {
     private static final Logger LOG = LogManager.getLogger("flink-cdc-multi");
+
+    private static final String DEBEZIUM_TIMESTAMP = "io.debezium.time.Timestamp";           // DATETIME -> millis
+    private static final String DEBEZIUM_MICRO_TIMESTAMP = "io.debezium.time.MicroTimestamp"; // DATETIME(4/5/6) -> micros
+    private static final String DEBEZIUM_ZONED_TIMESTAMP = "io.debezium.time.ZonedTimestamp"; // TIMESTAMP -> already has TZ, skip
+    private static final String DEBEZIUM_DATE = "io.debezium.time.Date";                      // DATE -> days since epoch, skip
+
+    private final ZoneId sourceZoneId;
+
+    public MySQLDebeziumToJSONDeserializer(String sourceTimezone) {
+        this.sourceZoneId = ZoneId.of(sourceTimezone);
+        LOG.info(">>> [AVRO-DESERIALIZER] SOURCE TIMEZONE: {}", sourceTimezone);
+    }
 
     @Override
     public void deserialize(SourceRecord sourceRecord, Collector<String> collector) throws Exception {
@@ -53,7 +67,7 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
             Long binlogPos = historyRecordPosition.getLongValue("pos");
             String ddlStatement = historyRecord.getString("ddl");
 
-            if (databaseName.isBlank() || tableName.isBlank()) {
+            if (databaseName == null || databaseName.isBlank() || tableName == null || tableName.isBlank()) {
                 String msg = String.format("INVALID DDL FOUND, MANUAL INTERVENTION NEEDED, STOPPING AT: (%s, %s)", binlogFile, binlogPos);
                 LOG.error(">>> [AVRO-DESERIALIZER] {}", msg);
                 LOG.error(
@@ -117,7 +131,24 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
             JSONObject valueObject = null;
             if (o != null) {
                 String type;
-                switch (o.getClass().getSimpleName()) {
+                Object correctedValue = o;
+
+                // Correct DATETIME timezone: Debezium hardcodes UTC for DATETIME,
+                // so we need to shift by the source timezone offset
+                String schemaName = field.schema().name();
+                if (DEBEZIUM_TIMESTAMP.equals(schemaName) && o instanceof Long) {
+                    // millis: Debezium treated local time as UTC, shift to real UTC
+                    long utcMillis = (Long) o;
+                    ZoneOffset offset = sourceZoneId.getRules().getOffset(Instant.ofEpochMilli(utcMillis));
+                    correctedValue = utcMillis - offset.getTotalSeconds() * 1000L;
+                } else if (DEBEZIUM_MICRO_TIMESTAMP.equals(schemaName) && o instanceof Long) {
+                    // micros: same logic but in microseconds
+                    long utcMicros = (Long) o;
+                    ZoneOffset offset = sourceZoneId.getRules().getOffset(Instant.ofEpochMilli(utcMicros / 1000L));
+                    correctedValue = utcMicros - offset.getTotalSeconds() * 1_000_000L;
+                }
+
+                switch (correctedValue.getClass().getSimpleName()) {
                     case "Integer":
                     case "Short":
                         type = "int";
@@ -140,7 +171,7 @@ public class MySQLDebeziumToJSONDeserializer implements DebeziumDeserializationS
                 }
 
                 valueObject = new JSONObject();
-                valueObject.put(type, o);
+                valueObject.put(type, correctedValue);
             }
 
             String sanitizedFieldName = Sanitizer.sanitize(field.name());

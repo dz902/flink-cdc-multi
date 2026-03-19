@@ -300,7 +300,7 @@ public class MySQLStreamer implements Streamer<String> {
             .tableList(tableList)
             .serverTimeZone(timezone)
             .scanNewlyAddedTableEnabled(true)
-            .deserializer(new MySQLDebeziumToJSONDeserializer())
+            .deserializer(new MySQLDebeziumToJSONDeserializer(timezone))
             .startupOptions(startupOptions)
             .includeSchemaChanges(true)
             .distributionFactorUpper(10)
